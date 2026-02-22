@@ -1,0 +1,17 @@
+services:
+  research:
+    build: .
+    image: bakindf/focus-core:1.0.0
+    container_name: focus-core-container
+    volumes:
+      - .:/app
+    ports:
+      - "8888:8888" # Jupyter
+      - "5000:5000" # MLflow
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    command: tail -f /dev/null
+    shm_size: '8gb'
+    restart: unless-stopped

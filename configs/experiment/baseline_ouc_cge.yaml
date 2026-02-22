@@ -1,0 +1,17 @@
+# @package _global_
+#
+# Baseline experiment: reproduce OUC-CGE results with SLOW model
+#
+# Usage: python -m src.train +experiment=baseline_ouc_cge
+
+defaults:
+  - override /data: ouc_cge
+  - override /model: slow
+  - override /trainer: default
+
+experiment:
+  name: baseline_ouc_cge
+  seed: 42
+
+trainer:
+  max_epochs: 50
