@@ -1,2 +1,5 @@
 [core]
+    remote = public
     autostage = true
+['remote "public"']
+    url = https://focus-core-bucket.storage.yandexcloud.net/dvc_dir/
