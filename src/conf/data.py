@@ -31,3 +31,5 @@ class DIPSERDataConfig(DataConfig):
     num_classes: int = 3
     clip_duration_sec: float = 10.0
     fps: int = 9
+
+
