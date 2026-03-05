@@ -6,7 +6,7 @@ dir_to_save = Path("data/separate_frames")
 step = 30
 
 with open(way_to_data, "r") as f:
-    for line in f.readlines():
+    for line in f:
         way, label = line.strip().split()
         way_to_file = Path(way)
         
