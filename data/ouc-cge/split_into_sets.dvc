@@ -1,0 +1,6 @@
+outs:
+- md5: 79cb81c6f821b37a3209b0e56d160989.dir
+  size: 207368
+  nfiles: 3
+  hash: md5
+  path: split_into_sets
