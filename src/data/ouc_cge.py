@@ -8,6 +8,8 @@ Paper: "A Video Dataset for Classroom Group Engagement Recognition" (Lu et al., 
 """
 
 from src.data.video_dataset import VideoDataset
+from pathlib import Path 
+import pandas as pd
 
 ENGAGEMENT_CLASSES = ["low", "medium", "high"]
 
@@ -16,10 +18,16 @@ class OUCCGEDataset(VideoDataset):
     """OUC-CGE video clip dataset."""
 
     def __init__(self, root: str, split: str = "train", transform=None):
-        raise NotImplementedError
+        self.root = Path(root)
+        self.split = split
+        self.transform = transform
+
+        self.path_of_filenames_list = self.root / f"{split}.csv"
+
+        self.sample = pd.read_csv(self.path_of_filenames_list, sep=' ', names=["path", "label"])
 
     def __len__(self) -> int:
-        raise NotImplementedError
+        return len(self.sample)
 
     def __getitem__(self, index: int) -> dict:
         raise NotImplementedError

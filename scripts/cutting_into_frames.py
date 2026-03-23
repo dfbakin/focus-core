@@ -56,7 +56,7 @@ def main():
     num_workers = os.cpu_count() 
 
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        results = list(tqdm(executor.map(get_frame, video_list[:50]), total=len(video_list[:50])))
+        results = list(tqdm(executor.map(get_frame, video_list), total=len(video_list)))
             
 
 if __name__ == "__main__":
