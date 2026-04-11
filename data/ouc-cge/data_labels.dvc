@@ -3,4 +3,4 @@ outs:
   size: 207368
   nfiles: 3
   hash: md5
-  path: split_into_sets
+  path: data_labels

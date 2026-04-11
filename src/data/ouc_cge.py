@@ -21,12 +21,14 @@ ENGAGEMENT_CLASSES = ["low", "medium", "high"]
 class OUCCGEDataset(VideoDataset):
     """OUC-CGE video clip dataset."""
 
-    def __init__(self, root: str, split: str = "train", config=None, transform=None):
+    def __init__(self, root: str | Path | None = None, split: str = "train", config=None, transform=None):
+        if root is None:
+            root = Path(__file__).parent.parent.parent / "data" / "ouc-cge"
         self.root = Path(root)
         self.split = split
         self.transform = transform
 
-        self.path_of_filenames_list = self.root / f"{split}.csv"
+        self.path_of_filenames_list = self.root / "data_labels" / f"{split}.csv"
         self.sample = pd.read_csv(self.path_of_filenames_list, sep=' ', names=["path", "label"])
 
         self.config = config
