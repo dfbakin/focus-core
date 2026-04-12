@@ -17,17 +17,14 @@ import logging
 
 
 ENGAGEMENT_CLASSES = ["low", "medium", "high"]
-ORIGINAL_FPS = 30
-CLIP_DURATION = 10
-BASIC_NUM_FRAMES = 8
 logger = logging.getLogger(__name__)
 
 class OUCCGEDataset(VideoDataset):
     """OUC-CGE video clip dataset."""
 
-    def __init__(self, root: str | Path | None = None, split: str = "train", fps: list[int] = [ORIGINAL_FPS], num_frames: list[int] = [BASIC_NUM_FRAMES], transform=None):
+    def __init__(self, root: str | Path | None = None, split: str = "train", fps: list[int | float] = [3.75, 15], num_frames: list[int] = [8, 32], transform=None):
         if root is None:
-            root = Path(__file__).parent.parent.parent / "data" / "ouc-cge"
+            raise ValueError("root is required, e.g. root='data/ouc-cge'")
         self.root = Path(root)
         self.split = split
         self.transform = transform
@@ -39,7 +36,8 @@ class OUCCGEDataset(VideoDataset):
         self.fps = fps
         self.list_of_rates = []
         for fps_num in self.fps:
-            self.list_of_rates.append(ORIGINAL_FPS // fps_num)
+            self.list_of_rates.append(30 // fps_num)
+        logger.info(f"Used OUC-CGE Dataset, split={self.split}, fps={self.fps}, num_frames={self.num_frames}, sample_rate={self.list_of_rates}") 
             
     def __len__(self) -> int:
         return len(self.sample)
@@ -57,7 +55,10 @@ class OUCCGEDataset(VideoDataset):
                 list_frames.append(frame_rgb)
             else:
                 logger.warning(f"Broken frame: {idx}, in video by {video_path}")
-                list_frames.append(list_frames[i - 1])
+                if i != 0:
+                    list_frames.append(list_frames[i - 1])
+                else:
+                    raise RuntimeError(f"the first frame in video by {video_path} way is broken")
 
         np_array_frames = np.array(list_frames)
         tensor_cv = torch.tensor(np_array_frames)
@@ -71,12 +72,13 @@ class OUCCGEDataset(VideoDataset):
         cap = cv2.VideoCapture(str(video_path))
         if cap.isOpened():
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            label = torch.tensor(self.sample.iloc[index, 1], dtype=torch.int64)
             window_size = max(f * r for f, r in zip(self.num_frames, self.list_of_rates))
 
             if total_frames > window_size:
                 start_point = np.random.randint(0, total_frames - window_size)
             else:
-                start_point = 0
+                raise RuntimeError(f"total frames count is too small - {total_frames} frames < {window_size} by {video_path} way and label={label}")
 
             data = {}
             for i, (n_frames, n_rate) in enumerate(zip(self.num_frames, self.list_of_rates)):
@@ -88,11 +90,11 @@ class OUCCGEDataset(VideoDataset):
                     data[f"flow_num_{i}"] = current_tensor
             
             cap.release()
-            data["label"] = torch.tensor(self.sample.iloc[index, 1], dtype=torch.int64)
+            data["label"] = label
             data["path"] = str(video_path)
             return data
         else:
-            raise RuntimeError(f"Error: video by {video_path} cloud not open")
+            raise RuntimeError(f"Error: video by {video_path} could not open")
 
     @property
     def num_classes(self) -> int:
@@ -102,7 +104,3 @@ class OUCCGEDataset(VideoDataset):
     def class_names(self) -> list[str]:
         return ENGAGEMENT_CLASSES
     
-if __name__ == "__main__":
-    ouc_cge = OUCCGEDataset(split="train", fps=[3, 15], num_frames=[8, 32])
-    sample_1 = ouc_cge[0]
-    print(sample_1)
