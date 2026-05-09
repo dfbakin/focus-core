@@ -33,13 +33,8 @@ def create_slow_r50(num_classes: int = 3, pretrained: bool = True, **kwargs) -> 
     return model
     
 
-
 @register_model("slowfast_r50")
 def create_slowfast_r50(num_classes: int = 3, pretrained: bool = True, **kwargs) -> nn.Module:
     """SlowFast ResNet-50 dual-pathway model."""
-    raise NotImplementedError
-
-
-if __name__ == "__main__":
-    model = create_slow_r50()
-    print(model.blocks[-1].proj)
+    model = _replace_head(model=torch.hub.load('facebookresearch/pytorchvideo', 'slowfast_r50', pretrained=pretrained), num_classes=num_classes)
+    return model
