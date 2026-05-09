@@ -21,7 +21,9 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.loggers import MLFlowLogger
 from omegaconf import DictConfig, OmegaConf
-
+from src.data.ouc_cge import OUCCGEDataset
+from src.data.transforms import get_train_transforms, get_val_transforms
+from src.data.datamodule import VideoDataModule
 from src.conf.config import Config, register_configs
 from src.models import VideoClassificationModule, create_model
 from src.models.backbones import *  # noqa: F401,F403 — trigger model registration
@@ -37,10 +39,12 @@ def build_datamodule(cfg: Config):
 
     Implement dataset construction here once OUC-CGE/DIPSER datasets are ready.
     """
-    raise NotImplementedError(
-        f"Dataset '{cfg.data.name}' not yet implemented. "
-        "Implement dataset loading in src/data/ and wire it here."
-    )
+    train_dloader = OUCCGEDataset(root=cfg.data.root, split="train", transform=get_train_transforms())
+    val_dloader = OUCCGEDataset(root=cfg.data.root, split="val", transform=get_val_transforms())
+    test_dloader = OUCCGEDataset(root=cfg.data.root, split="test", transform=get_val_transforms())
+
+    OUCCGEDatamodule = VideoDataModule(train_dataset=train_dloader, val_dataset=val_dloader, test_dataset=test_dloader, batch_size=cfg.data.batch_size, num_workers=cfg.data.num_workers, pin_memory=cfg.data.pin_memory)
+    return OUCCGEDatamodule
 
 
 def train(cfg: Config) -> float:

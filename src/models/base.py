@@ -42,7 +42,7 @@ class VideoClassificationModule(L.LightningModule):
         return self.model(x)
 
     def _shared_step(self, batch: dict) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        video, labels = batch["video"], batch["label"]
+        video, labels = batch["flow_num_0"], batch["label"]
         logits = self(video)
         loss = F.cross_entropy(logits, labels)
         preds = logits.argmax(dim=1)

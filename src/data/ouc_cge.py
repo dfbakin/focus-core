@@ -24,7 +24,7 @@ class OUCCGEDataset(VideoDataset):
 
     def __init__(self, root: str | Path | None = None, split: str = "train", fps: list[int | float] = [3.75, 15], num_frames: list[int] = [8, 32], transform=None):
         if root is None:
-            raise ValueError("root is required, e.g. root='data/ouc-cge'")
+            raise ValueError("root is required, e.g. root='data/ouc_cge'")
         self.root = Path(root)
         self.split = split
         self.transform = transform

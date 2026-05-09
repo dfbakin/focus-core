@@ -18,7 +18,7 @@ class DataConfig:
 @dataclass
 class OUCCGEDataConfig(DataConfig):
     name: str = "ouc_cge"
-    root: str = "data/ouc_cge"
+    root: str = "data/ouc-cge"
     num_classes: int = 3
     clip_duration_sec: float = 10.0
     fps: int = 30
