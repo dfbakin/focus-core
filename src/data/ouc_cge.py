@@ -37,12 +37,35 @@ class OUCCGEDataset(VideoDataset):
         self.list_of_rates = []
         for fps_num in self.fps:
             self.list_of_rates.append(30 // fps_num)
+
+        window = self.list_of_rates[0] * self.num_frames[0]
+        self._cleaning_dataset(window_size=window)
+
         logger.info(f"Used OUC-CGE Dataset, split={self.split}, fps={self.fps}, num_frames={self.num_frames}, sample_rate={self.list_of_rates}") 
             
+    def _cleaning_dataset(self, window_size: int = 64):
+        list_of_dropped_video = []
+        for video_idx in range(len(self.sample)):
+            video_path = self.root / Path(self.sample.iloc[video_idx, 0])
+            cap = cv2.VideoCapture(str(video_path))
+            if cap.isOpened():
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                if total_frames < window_size:
+                    list_of_dropped_video.append(video_idx)
+                else:
+                    is_read, _ = cap.read()
+                    if not is_read:
+                        list_of_dropped_video.append(video_idx)
+            else:
+                list_of_dropped_video.append(video_idx)    
+            cap.release()
+        self.sample = self.sample.drop(labels=list_of_dropped_video, axis=0).reset_index(drop=True)
+
+
     def __len__(self) -> int:
         return len(self.sample)
 
-    def _get_frame(self, cap, video_path, start_point, num_frames, rate):
+    def _get_frames(self, cap, video_path, start_point, num_frames, rate):
         list_frames = []
         for i in range(num_frames):
             idx = start_point + i * rate
@@ -75,20 +98,24 @@ class OUCCGEDataset(VideoDataset):
             label = torch.tensor(self.sample.iloc[index, 1], dtype=torch.int64)
             window_size = max(f * r for f, r in zip(self.num_frames, self.list_of_rates))
 
-            if total_frames > window_size:
+            if total_frames >= window_size:
                 start_point = np.random.randint(0, total_frames - window_size)
             else:
+                cap.release()
                 raise RuntimeError(f"total frames count is too small - {total_frames} frames < {window_size} by {video_path} way and label={label}")
 
             data = {}
             for i, (n_frames, n_rate) in enumerate(zip(self.num_frames, self.list_of_rates)):
-                current_tensor = self._get_frame(cap=cap, video_path=video_path, start_point=start_point, num_frames=n_frames, rate=n_rate)
+                try: 
+                    current_tensor = self._get_frames(cap=cap, video_path=video_path, start_point=start_point, num_frames=n_frames, rate=n_rate)
+                    if self.transform:
+                        data[f"flow_num_{i}"] = self.transform(current_tensor)
+                    else:
+                        data[f"flow_num_{i}"] = current_tensor
+                except RuntimeError:
+                    cap.release()
+                    raise RuntimeError(f"Error: RuntimeError in _get_frame function")
                 
-                if self.transform:
-                    data[f"flow_num_{i}"] = self.transform(current_tensor)
-                else:
-                    data[f"flow_num_{i}"] = current_tensor
-            
             cap.release()
             data["label"] = label
             data["path"] = str(video_path)
