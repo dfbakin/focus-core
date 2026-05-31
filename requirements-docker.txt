@@ -1,6 +1,9 @@
-# Docker-specific requirements (torch/torchvision installed separately via cu128 index).
-# Regenerate locked versions with:
-#   poetry export -f requirements.txt --output requirements-docker.txt
+# Docker-specific requirements.
+# torch / torchvision / numpy come preinstalled in the vast.ai base image and are
+# pinned via a pip constraints file in the Dockerfile, so they are NOT listed here.
+# Installed WITH transitive deps (the Dockerfile no longer uses --no-deps).
+# mediapipe pulls opencv-contrib-python; opencv-python-headless is also kept to
+# mirror the local Poetry environment (cv2 resolves to whichever loads last).
 
 pytorchvideo>=0.1.5
 lightning>=2.4.0

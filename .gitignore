@@ -10,6 +10,11 @@ venv/
 outputs/
 mlruns/
 
+# cached filtered manifests + analysis artifacts
+data/**/data_labels/.cache/
+docs/dataset_analysis.json
+docs/dataset_analysis.csv
+
 .vscode/
 
 *.ckpt

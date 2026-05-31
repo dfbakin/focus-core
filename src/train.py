@@ -34,17 +34,43 @@ log = logging.getLogger(__name__)
 register_configs()
 
 
-def build_datamodule(cfg: Config):
-    """Build the Lightning DataModule from config.
+def _pathways_for_model(cfg: Config) -> tuple[list[float], list[int]]:
+    """Map the model config to (fps, num_frames) temporal pathways.
 
-    Implement dataset construction here once OUC-CGE/DIPSER datasets are ready.
+    SlowFast needs two pathways (slow + fast); single-pathway models (SLOW,
+    I3D, X3D, C2D, ...) need one. Decoding only the required pathways avoids
+    wasting I/O on frames the model never sees.
     """
-    train_dloader = OUCCGEDataset(root=cfg.data.root, split="train", transform=get_train_transforms())
-    val_dloader = OUCCGEDataset(root=cfg.data.root, split="val", transform=get_val_transforms())
-    test_dloader = OUCCGEDataset(root=cfg.data.root, split="test", transform=get_val_transforms())
+    name = cfg.model.name
+    if name == "slowfast_r50":
+        # slow: 8 frames @ stride 8 (~3.75 fps); fast: 32 frames @ stride 2 (~15 fps)
+        return [3.75, 15.0], [8, 32]
+    # Default single SLOW pathway: 8 frames @ stride 8.
+    return [3.75], [8]
 
-    OUCCGEDatamodule = VideoDataModule(train_dataset=train_dloader, val_dataset=val_dloader, test_dataset=test_dloader, batch_size=cfg.data.batch_size, num_workers=cfg.data.num_workers, pin_memory=cfg.data.pin_memory)
-    return OUCCGEDatamodule
+
+def build_datamodule(cfg: Config):
+    """Build the Lightning DataModule from config."""
+    fps, num_frames = _pathways_for_model(cfg)
+
+    train_ds = OUCCGEDataset(
+        root=cfg.data.root, split="train", fps=fps, num_frames=num_frames,
+        transform=get_train_transforms(),
+    )
+    val_ds = OUCCGEDataset(
+        root=cfg.data.root, split="val", fps=fps, num_frames=num_frames,
+        transform=get_val_transforms(),
+    )
+    test_ds = OUCCGEDataset(
+        root=cfg.data.root, split="test", fps=fps, num_frames=num_frames,
+        transform=get_val_transforms(),
+    )
+
+    return VideoDataModule(
+        train_dataset=train_ds, val_dataset=val_ds, test_dataset=test_ds,
+        batch_size=cfg.data.batch_size, num_workers=cfg.data.num_workers,
+        pin_memory=cfg.data.pin_memory,
+    )
 
 
 def train(cfg: Config) -> float:
