@@ -163,7 +163,7 @@ def train(cfg: Config) -> float:
     return float(trainer.callback_metrics.get("val/accuracy", torch.tensor(0.0)))
 
 
-@hydra.main(version_base=None, config_name="config")
+@hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> float:
     return train(cfg)
 

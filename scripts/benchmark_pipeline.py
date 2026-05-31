@@ -37,7 +37,7 @@ class SubsetOUCCGE(OUCCGEDataset):
 
     bench_n = 64
 
-    def _cleaning_dataset(self, window_size: int = 64):
+    def _cleaning_dataset(self, window_size: int = 64, use_cache: bool = False):
         import cv2
         keep = []
         for idx in range(len(self.sample)):
