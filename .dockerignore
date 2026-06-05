@@ -1,0 +1,32 @@
+# Keep the build context tiny: the image only needs requirements-docker.txt.
+# Never ship data, envs, or VCS metadata to the Docker daemon.
+.git
+.gitignore
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+
+# Datasets / DVC payloads (tens of GB)
+data
+.dvc/cache
+.dvc/tmp
+
+# Experiment outputs / tracking
+outputs
+mlruns
+*.ckpt
+*.pt
+*.pth
+
+# Analysis artifacts
+docs/dataset_analysis.json
+docs/dataset_analysis.csv
+
+# Misc
+.DS_Store
+.vscode
+terminals

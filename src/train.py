@@ -21,7 +21,9 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.loggers import MLFlowLogger
 from omegaconf import DictConfig, OmegaConf
-
+from src.data.ouc_cge import OUCCGEDataset
+from src.data.transforms import get_train_transforms, get_val_transforms
+from src.data.datamodule import VideoDataModule
 from src.conf.config import Config, register_configs
 from src.models import VideoClassificationModule, create_model
 from src.models.backbones import *  # noqa: F401,F403 — trigger model registration
@@ -32,14 +34,42 @@ log = logging.getLogger(__name__)
 register_configs()
 
 
-def build_datamodule(cfg: Config):
-    """Build the Lightning DataModule from config.
+def _pathways_for_model(cfg: Config) -> tuple[list[float], list[int]]:
+    """Map the model config to (fps, num_frames) temporal pathways.
 
-    Implement dataset construction here once OUC-CGE/DIPSER datasets are ready.
+    SlowFast needs two pathways (slow + fast); single-pathway models (SLOW,
+    I3D, X3D, C2D, ...) need one. Decoding only the required pathways avoids
+    wasting I/O on frames the model never sees.
     """
-    raise NotImplementedError(
-        f"Dataset '{cfg.data.name}' not yet implemented. "
-        "Implement dataset loading in src/data/ and wire it here."
+    name = cfg.model.name
+    if name == "slowfast_r50":
+        # slow: 8 frames @ stride 8 (~3.75 fps); fast: 32 frames @ stride 2 (~15 fps)
+        return [3.75, 15.0], [8, 32]
+    # Default single SLOW pathway: 8 frames @ stride 8.
+    return [3.75], [8]
+
+
+def build_datamodule(cfg: Config):
+    """Build the Lightning DataModule from config."""
+    fps, num_frames = _pathways_for_model(cfg)
+
+    train_ds = OUCCGEDataset(
+        root=cfg.data.root, split="train", fps=fps, num_frames=num_frames,
+        transform=get_train_transforms(),
+    )
+    val_ds = OUCCGEDataset(
+        root=cfg.data.root, split="val", fps=fps, num_frames=num_frames,
+        transform=get_val_transforms(),
+    )
+    test_ds = OUCCGEDataset(
+        root=cfg.data.root, split="test", fps=fps, num_frames=num_frames,
+        transform=get_val_transforms(),
+    )
+
+    return VideoDataModule(
+        train_dataset=train_ds, val_dataset=val_ds, test_dataset=test_ds,
+        batch_size=cfg.data.batch_size, num_workers=cfg.data.num_workers,
+        pin_memory=cfg.data.pin_memory,
     )
 
 
@@ -133,7 +163,7 @@ def train(cfg: Config) -> float:
     return float(trainer.callback_metrics.get("val/accuracy", torch.tensor(0.0)))
 
 
-@hydra.main(version_base=None, config_name="config")
+@hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> float:
     return train(cfg)
 

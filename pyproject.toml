@@ -30,12 +30,22 @@ dependencies = [
 [tool.poetry]
 packages = [{include = "src"}]
 
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0.0"
+
 [tool.poetry.requires-plugins]
 poetry-plugin-export = ">=1.8"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "realdata: tests that require the full OUC-CGE dataset on disk",
+]
 
 [tool.ruff]
 line-length = 88

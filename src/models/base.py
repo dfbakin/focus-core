@@ -42,7 +42,13 @@ class VideoClassificationModule(L.LightningModule):
         return self.model(x)
 
     def _shared_step(self, batch: dict) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        video, labels = batch["video"], batch["label"]
+        labels = batch["label"]
+        # Collect temporal pathways in order. A single pathway is passed as a
+        # bare tensor (SLOW/I3D/...); multiple pathways as a list (SlowFast).
+        pathways = [batch[k] for k in sorted(batch) if k.startswith("flow_num_")]
+        if not pathways:
+            raise KeyError("batch has no 'flow_num_*' video tensors")
+        video = pathways[0] if len(pathways) == 1 else pathways
         logits = self(video)
         loss = F.cross_entropy(logits, labels)
         preds = logits.argmax(dim=1)

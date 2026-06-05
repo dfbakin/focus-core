@@ -1,0 +1,6 @@
+outs:
+- md5: 472ed7afe81994f116b548191b577979.dir
+  size: 1140487380
+  nfiles: 4
+  hash: md5
+  path: baseline_ouc_cge
