@@ -45,6 +45,8 @@ def _pathways_for_model(cfg: Config) -> tuple[list[float], list[int]]:
     if name == "slowfast_r50":
         # slow: 8 frames @ stride 8 (~3.75 fps); fast: 32 frames @ stride 2 (~15 fps)
         return [3.75, 15.0], [8, 32]
+    if name == "resnet50":
+        return [30], [1] #chosing 1 frame from video randomly (just our startpoint)
     # Default single SLOW pathway: 8 frames @ stride 8.
     return [3.75], [8]
 
@@ -149,6 +151,7 @@ def train(cfg: Config) -> float:
         val_check_interval=cfg.trainer.val_check_interval,
         check_val_every_n_epoch=cfg.trainer.check_val_every_n_epoch,
         deterministic=cfg.trainer.deterministic,
+        limit_train_batches=cfg.trainer.get("limit_train_batches", None),
         logger=mlflow_logger,
         callbacks=callbacks,
         default_root_dir=str(output_dir),

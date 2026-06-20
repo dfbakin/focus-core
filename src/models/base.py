@@ -49,6 +49,8 @@ class VideoClassificationModule(L.LightningModule):
         if not pathways:
             raise KeyError("batch has no 'flow_num_*' video tensors")
         video = pathways[0] if len(pathways) == 1 else pathways
+        if video.ndim == 5 and video.shape[2] == 1:
+            video = video.squeeze(2) #add some modification for resnet50 experimental classification 
         logits = self(video)
         loss = F.cross_entropy(logits, labels)
         preds = logits.argmax(dim=1)
