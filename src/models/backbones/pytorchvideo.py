@@ -38,3 +38,13 @@ def create_slowfast_r50(num_classes: int = 3, pretrained: bool = True, **kwargs)
     """SlowFast ResNet-50 dual-pathway model."""
     model = _replace_head(model=torch.hub.load('facebookresearch/pytorchvideo', 'slowfast_r50', pretrained=pretrained), num_classes=num_classes)
     return model
+
+@register_model("resnet50")
+def create_resnet50(num_classes: int = 3, pretrained: bool = True, **kwargs) -> nn.Module:
+    """Experimental model for understanding complexity of the task"""
+    model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet50', pretrained=pretrained)
+    new_head = nn.Linear(in_features=model.fc.in_features, out_features=num_classes, bias=True)
+    model.fc = new_head
+    return model
+
+

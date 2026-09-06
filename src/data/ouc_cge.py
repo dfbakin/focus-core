@@ -200,12 +200,18 @@ class OUCCGEDataset(VideoDataset):
                 )
             # +1 so a clip with exactly window_size frames yields start=0
             # instead of np.random.randint(0, 0), which raises.
-            start_point = int(np.random.randint(0, total_frames - self.window_size + 1))
+            if self.split in ('val', 'test'):
+                start_point = (total_frames - self.window_size + 1) // 2
+            else:
+                start_point = int(np.random.randint(0, total_frames - self.window_size + 1))
 
             data = {}
             for i, (n_frames, n_rate) in enumerate(zip(self.num_frames, self.list_of_rates)):
                 clip = self._get_frames(cap, video_path, start_point, n_frames, n_rate)
                 data[f"flow_num_{i}"] = self.transform(clip) if self.transform else clip
+        except RuntimeError as e:
+            logger.warning("Skipping sample %d: %s", index, e)
+            return self.__getitem__((index + 1) % len(self))
         finally:
             cap.release()
 
