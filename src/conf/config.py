@@ -5,7 +5,7 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 
 from src.conf.data import OUCCGEDataConfig, DIPSERDataConfig
-from src.conf.model import SlowConfig, SlowFastConfig
+from src.conf.model import SlowConfig, SlowFastConfig, ResNet50Config
 from src.conf.trainer import TrainerConfig
 
 
@@ -63,5 +63,6 @@ def register_configs() -> None:
 
     cs.store(group="model", name="slow", node=SlowConfig)
     cs.store(group="model", name="slowfast", node=SlowFastConfig)
+    cs.store(group="model", name="resnet50", node=ResNet50Config)
 
     cs.store(group="trainer", name="default", node=TrainerConfig)
