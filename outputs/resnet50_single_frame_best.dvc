@@ -1,0 +1,6 @@
+outs:
+- md5: 835e156a463ead070701d8abb6fdf694.dir
+  size: 282631714
+  nfiles: 2
+  hash: md5
+  path: resnet50_single_frame_best
