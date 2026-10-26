@@ -20,3 +20,7 @@ docs/dataset_analysis.csv
 
 .DS_Store
 /mlruns
+*.ts
+SLOW_8x8_R50.pyth
+outputs/
+demo_lecture.mp4

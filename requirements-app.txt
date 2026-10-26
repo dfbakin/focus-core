@@ -1,0 +1,11 @@
+# Desktop application dependencies. Training dependencies are in requirements.txt.
+PyQt6>=6.6
+pyqtgraph>=0.13
+torch>=2.5
+torchvision>=0.20
+opencv-python-headless>=4.10
+cv2-enumerate-cameras>=1.1
+numpy<2.3
+psutil>=5.9
+requests>=2.31
+matplotlib>=3.8

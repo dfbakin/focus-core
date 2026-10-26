@@ -42,6 +42,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-q"
 markers = [
     "realdata: tests that require the full OUC-CGE dataset on disk",
