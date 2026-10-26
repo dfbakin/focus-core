@@ -1,0 +1,22 @@
+# @package _global_
+#
+# experiment with baseline model by 1 frame like example (just image, not video)
+#
+# Usage: python -m src.train +experiment=resnet50_ouc_cge_baseline
+
+defaults:
+  - override /data: ouc_cge
+  - override /model: resnet50
+  - override /trainer: default
+
+experiment:
+  name: resnet50_ouc_cge_baseline
+  seed: 42
+
+trainer:
+  max_epochs: 50
+  precision: bf16-mixed
+
+data:
+  batch_size: 32
+  num_workers: 16

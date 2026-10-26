@@ -28,3 +28,8 @@ class SlowFastConfig(ModelConfig):
     fast_num_frames: int = 32
 
 
+@dataclass
+class ResNet50Config(ModelConfig):
+    name: str = "resnet50"
+    num_frames: int = 1
+
