@@ -48,6 +48,22 @@ The best two checkpoints by validation accuracy and `last.ckpt` (a copy of the l
 not the final epoch) are written to `outputs/review/<run>/checkpoints/`; summaries, per-clip
 predictions and logs to `outputs/review_grouped/`. Both are git-ignored.
 
+The checkpoints of the 2026-11-05 rerun are stored in DVC (`outputs/review.dvc`: the 15 checkpoint
+files and the resolved configs of R1-R5, 3.0 GB to download):
+
+```bash
+dvc pull outputs/review.dvc
+python scripts/review/09_materialize_splits.py      # dataset roots, if not created yet
+python scripts/review/05_eval_checkpoints.py --model resnet50 --root data/grp27a --split test \
+    --ckpt "outputs/review/R2_r50_grp27a/checkpoints/epoch=02-val_acc=0.6005.ckpt" \
+    --out outputs/review_eval --tag R2_test        # 0.5032
+```
+
+These are the rerun's files: R1-R4 give the published numbers exactly, R5 gives the rerun's 0.5180
+and not the published 0.5088 (see "Rerun on a second host"). Their hashes are listed in
+`docs/review/data/grouped/rerun_2026-11-05/checkpoints.sha256`. `08_run_grouped_training.sh` does
+not use them: it trains again and writes next to them.
+
 ## The three splits
 
 A scene is a connected component of clips linked by near-identical frames: two clips are linked when
@@ -169,8 +185,9 @@ trainer.precision=bf16-mixed`. Seed 42 in both presets.
   `MLFLOW_ALLOW_FILE_STORE=true`; do the same when calling `python -m src.train` directly.
 - `01_frame_cache.py`, `03b_scene_clusters_thumb.py` and the training use a GPU when one is
   visible. On a machine whose GPU must stay idle, run the CPU steps with `CUDA_VISIBLE_DEVICES=""`.
-- `run_05_06.sh` re-evaluates the stored random-split checkpoints. `dvc pull outputs/*.dvc` fails
-  while the root `.gitignore` lists `outputs/`; remove that line for the pull and restore it.
+- `run_05_06.sh` re-evaluates the stored random-split checkpoints; fetch them with
+  `dvc pull outputs/baseline_ouc_cge.dvc outputs/resnet50_single_frame_best.dvc`. Before commit
+  16bcec8 the root `.gitignore` listed `outputs/` and DVC refused these files as git-ignored.
 
 | | published runs, 2026-10-26 | rerun, 2026-11-05 |
 |---|---|---|

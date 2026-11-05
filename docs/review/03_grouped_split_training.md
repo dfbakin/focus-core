@@ -413,6 +413,7 @@ How to reproduce the splits and the runs, and the result of doing so on a second
 - Host only (that instance no longer exists): dataset roots
   `/workspace/focus-core/data/{grp27a,grp27b,grp17}` (manifests + `videos` symlink; rebuilt byte for
   byte by `scripts/review/09_materialize_splits.py`), checkpoints
-  `/workspace/focus-core/outputs/review/R*/checkpoints/` (4.3 GB; not kept, see the rerun in
-  `scripts/review/README.md`), `/workspace/focus-core/mlruns` (experiment `review_grouped`),
+  `/workspace/focus-core/outputs/review/R*/checkpoints/` (4.3 GB; not kept. The checkpoints of the
+  2026-11-05 rerun are in DVC, `dvc pull outputs/review.dvc`, see `scripts/review/README.md`),
+  `/workspace/focus-core/mlruns` (experiment `review_grouped`),
   `/workspace/review_grouped/`
