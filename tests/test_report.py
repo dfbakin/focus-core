@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from app.core.report import CriticalMoment, SessionReport, find_critical_moments
+from app.core.report import (
+    CriticalMoment,
+    MomentNote,
+    SessionReport,
+    find_critical_moments,
+    find_dips,
+)
 from app.core.report_pdf import export_report_pdf
 
 START = datetime(2026, 9, 28, 14, 0)
@@ -61,3 +67,25 @@ def test_pdf_is_written(tmp_path: Path) -> None:
 def test_pdf_without_data_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         export_report_pdf(_report([]), tmp_path / "report.pdf")
+
+
+def test_short_moment_has_one_dip() -> None:
+    points = [(0.0, 80.0), (5.0, 30.0), (10.0, 20.0), (15.0, 35.0), (20.0, 70.0)]
+    assert find_dips(points, CriticalMoment(5.0, 20.0, 20.0)) == [10.0]
+
+
+def test_long_moment_keeps_the_deepest_dips_apart() -> None:
+    points = [(0.0, 30.0), (10.0, 10.0), (20.0, 12.0), (30.0, 11.0), (40.0, 30.0),
+              (100.0, 15.0), (110.0, 30.0), (200.0, 25.0), (210.0, 35.0), (300.0, 5.0)]
+    moment = CriticalMoment(0.0, 300.0, 5.0)
+    assert find_dips(points, moment) == [10.0, 100.0, 300.0]
+
+
+def test_mostly_low_lecture_is_detected() -> None:
+    assert _report([(0, 30.0), (30, 25.0), (60, 70.0)]).mostly_below_threshold
+    assert not _report([(0, 80.0), (30, 25.0), (60, 70.0), (90, 80.0)]).mostly_below_threshold
+
+
+def test_transcript_is_split_into_fragments() -> None:
+    assert MomentNote("первый\n\nвторой").transcript_parts == ["первый", "второй"]
+    assert MomentNote().transcript_parts == []

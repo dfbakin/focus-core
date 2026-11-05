@@ -1,10 +1,10 @@
 """Lecture page: recording and live engagement estimation.
 
-Covers user scenario 3 (start, pause, finish with the model running in the
-background) and scenario 9 (RAM check before the start). A camera is analysed
-in real time; a video file is analysed as fast as possible, and the report
-opens as soon as the whole file is processed. Audio recording is added in the
-next stage.
+Covers user scenario 3 (readiness of video and audio, start, pause, finish
+with the model running in the background) and scenario 9 (RAM check before
+the start). A camera is analysed in real time while the microphone is
+recorded into memory; a video file is analysed as fast as possible, and the
+report opens as soon as the whole file is processed.
 """
 
 from pathlib import Path
@@ -25,11 +25,22 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core.analysis import ExponentialMovingAverage, level_for_score, summarize
+from app.core.audio import AudioBuffer
+from app.core.audio_source import (
+    AudioTrackMissingError,
+    MicrophoneRecorder,
+    MicrophoneUnavailableError,
+    check_audio_track,
+    check_microphone,
+)
 from app.core.diagnostics import MemoryStatus, check_memory
 from app.core.formatting import format_clock, format_seconds
 from app.core.offline import forecast_processing_time, next_countdown_value
+from app.core.report import find_critical_moments
 from app.core.session import SessionClock, SessionState
+from app.core.transcription import WhisperClient, load_api_key
 from app.core.video_source import FILE, VideoSource, VideoSourceError, check_signal
+from app.cloud.account import AccountService
 from app.cloud.config import load_cloud_config
 from app.db.account import load_account
 from app.db.local import DB_PATH
@@ -48,10 +59,18 @@ from app.db.settings import (
 from app.ui.image import frame_to_pixmap
 from app.ui.indicator import EngagementIndicator
 from app.ui.memory_dialog import MemoryDialog
-from app.ui.theme import page_title, set_role
-from app.ui.workers import CameraAnalysisWorker, FileAnalysisWorker
+from app.ui.theme import set_role
+from app.ui.transcription_job import (
+    NO_TRANSCRIBER_TEXT,
+    Transcriber,
+    create_transcription_worker,
+    error_text,
+    forget,
+)
+from app.ui.workers import CameraAnalysisWorker, FileAnalysisWorker, TaskWorker
 
 TIMER_INTERVAL_MS = 500
+TRANSCRIPTION_WAIT_MS = 30000
 FORECAST_UPDATE_SEC = 1.0
 CAMERA_VIEW_WIDTH = 384
 CAMERA_VIEW_HEIGHT = 216
@@ -70,6 +89,17 @@ SOURCE_NOT_READY_TEXT = (
     "Источник видео не отвечает. Проверьте подключение камеры или файл "
     "в разделе «Источник видео»."
 )
+MICROPHONE_NOT_READY_TEXT = (
+    "Микрофон недоступен. Подключите микрофон и разрешите доступ к нему: "
+    "«Системные настройки» → «Конфиденциальность и безопасность» → «Микрофон»."
+)
+NO_AUDIO_TRACK_TEXT = (
+    "В видеофайле нет звуковой дорожки или её не удаётся прочитать. "
+    "Выберите запись со звуком в разделе «Источник видео»."
+)
+AUDIO_RECORDING = "Звук записывается в память и будет удалён после расшифровки"
+AUDIO_PAUSED = "Запись звука приостановлена"
+AUDIO_FROM_FILE = "Звуковая дорожка файла будет расшифрована после обработки"
 
 STATUS_ROLES = {
     SessionState.RUNNING: "statusRunning",
@@ -89,6 +119,10 @@ class LecturePage(QWidget):
             new point of the engagement series. For a video file the offset
             is the position in the video.
         change_source_requested: Emitted when the user clicks «Изменить».
+        transcription_started: Emitted with the session id when critical
+            moments of a finished lecture start being transcribed.
+        transcription_finished: Emitted with the session id and an error
+            message, empty if the transcripts were saved.
     """
 
     lecture_started = pyqtSignal()
@@ -96,14 +130,27 @@ class LecturePage(QWidget):
     frame_ready = pyqtSignal(object)
     point_recorded = pyqtSignal(float, float, bool)
     change_source_requested = pyqtSignal()
+    transcription_started = pyqtSignal(str)
+    transcription_finished = pyqtSignal(str, str)
 
-    def __init__(self, db_path: Path = DB_PATH, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        account_service: AccountService | None = None,
+        db_path: Path = DB_PATH,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._account_service = account_service
         self._db_path = db_path
         self._session_id: str | None = None
         self._clock = SessionClock()
         self._worker: CameraAnalysisWorker | FileAnalysisWorker | None = None
         self._smoother = ExponentialMovingAverage(1)
+        self._audio: AudioBuffer | None = None
+        self._recorder: MicrophoneRecorder | None = None
+        self._audio_path: str | None = None
+        self._threshold_pct = 0
+        self._transcribers: list[TaskWorker] = []
         self._points: list[tuple[float, float]] = []
         self._is_file = False
         self._video_position = 0.0
@@ -130,6 +177,8 @@ class LecturePage(QWidget):
         )
 
         self.status_label = QLabel()
+        self.audio_label = QLabel()
+        set_role(self.audio_label, "hint")
         self.timer_label = QLabel(format_clock(0))
         set_role(self.timer_label, "timer")
         self.indicator = EngagementIndicator()
@@ -172,7 +221,6 @@ class LecturePage(QWidget):
 
     def _build_layout(self) -> None:
         """Center all elements of the page."""
-        title = page_title("Лекция")
         center = Qt.AlignmentFlag.AlignHCenter
 
         source_row = QHBoxLayout()
@@ -188,10 +236,10 @@ class LecturePage(QWidget):
         controls.addStretch()
 
         layout = QVBoxLayout(self)
-        layout.addWidget(title)
         layout.addStretch()
         layout.addLayout(source_row)
         layout.addWidget(self.status_label, alignment=center)
+        layout.addWidget(self.audio_label, alignment=center)
         layout.addWidget(self.timer_label, alignment=center)
         layout.addWidget(self.progress_row, alignment=center)
         layout.addWidget(self.indicator, alignment=center)
@@ -212,17 +260,21 @@ class LecturePage(QWidget):
         return self._clock.state in (SessionState.RUNNING, SessionState.PAUSED)
 
     def shutdown(self) -> None:
-        """Save a running lecture and stop the analysis thread; called when the
-        window closes.
+        """Save a running lecture and stop analysis and recording; called when the window closes.
 
         The engagement series lives only in memory until the session is
-        finished, so closing the window must finish it instead of discarding
-        the whole lecture.
+        finished, so closing the window finishes the lecture instead of
+        discarding it. Transcriptions that are still running are given time
+        to finish, because a thread must not be destroyed while it runs.
         """
         if self.is_lecture_running():
             self._finish_session()
         else:
             self._stop_worker()
+            self._stop_recording()
+        self._release_audio()
+        for worker in self._transcribers:
+            worker.wait(TRANSCRIPTION_WAIT_MS)
 
     def _update_source_label(self) -> None:
         """Show which source the next lecture will use."""
@@ -241,23 +293,37 @@ class LecturePage(QWidget):
         if source is None:
             QMessageBox.information(self, "Источник не выбран", NO_SOURCE_TEXT)
             return
-        if not self._source_is_ready(source):
-            QMessageBox.warning(self, "Источник недоступен", SOURCE_NOT_READY_TEXT)
+        problem = self._readiness_problem(source)
+        if problem is not None:
+            QMessageBox.warning(self, "Источник не готов", problem)
             return
         if not self._memory_is_sufficient():
             return
         self._start_session(source)
 
-    def _source_is_ready(self, source: VideoSource) -> bool:
-        """Try to read a frame from the source before the lecture starts."""
+    def _readiness_problem(self, source: VideoSource) -> str | None:
+        """Check video and audio before the lecture (user scenario 3, step 2).
+
+        For a camera the microphone must open; for a video file it must
+        contain an audio track. Returns the message to show, or None if
+        everything is ready.
+        """
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             check_signal(source)
+            if source.kind == FILE:
+                check_audio_track(source.file_path)
+            else:
+                check_microphone()
         except VideoSourceError:
-            return False
+            return SOURCE_NOT_READY_TEXT
+        except AudioTrackMissingError:
+            return NO_AUDIO_TRACK_TEXT
+        except MicrophoneUnavailableError:
+            return MICROPHONE_NOT_READY_TEXT
         finally:
             QApplication.restoreOverrideCursor()
-        return True
+        return None
 
     def _memory_is_sufficient(self) -> bool:
         """Check free RAM; while it is short, keep the user in MemoryDialog."""
@@ -272,14 +338,18 @@ class LecturePage(QWidget):
         return check_memory(load_min_free_ram_mb(self._db_path))
 
     def _start_session(self, source: VideoSource) -> None:
-        """Create a session record, start the timer and the analysis thread."""
+        """Start recording, create a session record, the timer and the analysis thread."""
+        self._is_file = source.kind == FILE
+        if not self._is_file and not self._start_recording():
+            return
         settings = load_settings(self._db_path)
         self._session_id = create_session(
             source.kind, settings.threshold_pct, self._db_path
         )
         self._smoother = ExponentialMovingAverage(settings.smoothing_window)
+        self._threshold_pct = settings.threshold_pct
+        self._audio_path = source.file_path if self._is_file else None
         self._points = []
-        self._is_file = source.kind == FILE
         self._video_position = 0.0
         self._video_duration = 0.0
         self._processing_started_at = None
@@ -416,6 +486,12 @@ class LecturePage(QWidget):
             FORECAST_TEXT.format(remaining=format_seconds(round(self._shown_remaining)))
         )
 
+    def _audio_status(self, state: SessionState) -> str:
+        """Explain what happens to the sound of the current lecture."""
+        if self._is_file:
+            return AUDIO_FROM_FILE
+        return AUDIO_PAUSED if state == SessionState.PAUSED else AUDIO_RECORDING
+
     def _running_status(self) -> str:
         """Status text while analysis is running."""
         return STATUS_PROCESSING if self._is_file else STATUS_RUNNING
@@ -450,14 +526,17 @@ class LecturePage(QWidget):
         self.indicator.show_neutral("Нет данных")
 
     def _finish_session(self) -> None:
-        """Stop analysis, save the series and the summary, return to idle."""
+        """Stop analysis, save the series and the summary, return to idle.
+
+        The clock is read before the analysis thread is stopped: stopping
+        waits for the running inference, and that wait is not lecture time.
+        """
         if self._session_id is None:
             return
-        # Read the clock first: stopping the worker waits for the running
-        # inference (up to ANALYSIS_STOP_TIMEOUT_MS), which is not lecture time.
         self._timer.stop()
         duration = self._clock.finish()
         self._stop_worker()
+        self._stop_recording()
         if self._is_file:
             duration = round(self._video_position)
         values = [value for _, value in self._points]
@@ -472,6 +551,37 @@ class LecturePage(QWidget):
         self._session_id = None
         self._reset_to_idle()
         self.session_finished.emit(finished_id)
+        self._transcribe(finished_id)
+
+    def _transcribe(self, session_id: str) -> None:
+        """Hand the recording over to a background transcription job.
+
+        The page keeps no reference to the audio after this: the job clears
+        it when it ends (user scenario 8: audio is deleted after transcription).
+        """
+        moments = find_critical_moments(self._points, self._threshold_pct)
+        audio, self._audio = self._audio, None
+        transcriber = self._transcriber()
+        if transcriber is None:
+            forget(audio)
+            if moments:
+                self.transcription_finished.emit(session_id, NO_TRANSCRIBER_TEXT)
+            return
+        worker = create_transcription_worker(
+            session_id, moments, list(self._points), audio, self._audio_path,
+            transcriber, self._db_path, self,
+        )
+        if worker is None:
+            return
+        self._transcribers.append(worker)
+        worker.succeeded.connect(lambda _: self.transcription_finished.emit(session_id, ""))
+        worker.failed.connect(
+            lambda error: self.transcription_finished.emit(session_id, error_text(error))
+        )
+        worker.finished.connect(lambda: self._transcribers.remove(worker))
+        worker.finished.connect(worker.deleteLater)
+        self.transcription_started.emit(session_id)
+        worker.start()
 
     def _reset_to_idle(self) -> None:
         """Return the page to its initial look; the results are shown in the report."""
@@ -486,10 +596,49 @@ class LecturePage(QWidget):
         self.camera_view.clear()
         self.camera_button.setText("Скрыть видео" if visible else "Показать видео")
 
+    def _transcriber(self) -> Transcriber | None:
+        """Choose how to transcribe: through the account, or with a personal key.
+
+        A signed-in account sends speech to the project's Edge Function,
+        which holds the OpenAI key. Without an account a key in
+        ~/.focuscore/openai.json is used, which is handy for development.
+        """
+        if self._account_service is not None and self._account_service.account is not None:
+            return self._account_service
+        api_key = load_api_key()
+        return WhisperClient(api_key) if api_key else None
+
+    def _start_recording(self) -> bool:
+        """Record the microphone into memory; warn and return False if it fails."""
+        self._audio = AudioBuffer()
+        self._recorder = MicrophoneRecorder(self._audio)
+        try:
+            self._recorder.start()
+        except MicrophoneUnavailableError:
+            self._recorder = None
+            self._audio = None
+            QMessageBox.warning(self, "Источник не готов", MICROPHONE_NOT_READY_TEXT)
+            return False
+        return True
+
+    def _stop_recording(self) -> None:
+        """Stop the microphone; the recording itself stays in memory."""
+        if self._recorder is not None:
+            self._recorder.stop()
+            self._recorder = None
+
+    def _release_audio(self) -> None:
+        """Forget the recorded audio, so nothing of it remains after the lecture."""
+        if self._audio is not None:
+            self._audio.clear()
+            self._audio = None
+
     def _set_worker_paused(self, paused: bool) -> None:
-        """Forward pause state to the analysis thread if it is running."""
+        """Forward pause state to the analysis thread and the microphone."""
         if self._worker is not None:
             self._worker.set_paused(paused)
+        if self._recorder is not None:
+            self._recorder.set_paused(paused)
 
     def _stop_worker(self) -> None:
         """Stop the analysis thread if it is running."""
@@ -518,6 +667,8 @@ class LecturePage(QWidget):
         self.camera_button.setVisible(in_progress)
         self.indicator.setVisible(in_progress)
         processing_file = in_progress and self._is_file
+        self.audio_label.setVisible(in_progress)
+        self.audio_label.setText(self._audio_status(state))
         self.timer_label.setVisible(not processing_file)
         self.progress_row.setVisible(processing_file)
         self.pause_button.setText("Продолжить" if state == SessionState.PAUSED else "Пауза")

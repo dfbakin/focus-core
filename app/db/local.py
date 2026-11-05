@@ -43,6 +43,7 @@ def init_db(db_path: Path = DB_PATH) -> None:
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     with get_connection(db_path) as conn:
         conn.executescript(schema)
+        _add_missing_columns(conn)
         conn.execute(
             "INSERT OR IGNORE INTO users (id, email, display_name, created_at) "
             "VALUES (?, ?, ?, ?)",
@@ -53,3 +54,18 @@ def init_db(db_path: Path = DB_PATH) -> None:
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
+
+
+ADDED_COLUMNS = (("critical_moments", "transcript", "TEXT"),)
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    """Add columns that appeared after the database was first created.
+
+    CREATE TABLE IF NOT EXISTS does not change an existing table, so a
+    database created by an earlier version gets the new columns here.
+    """
+    for table, column, column_type in ADDED_COLUMNS:
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")

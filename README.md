@@ -2,6 +2,53 @@
 
 Automatic recognition of group engagement levels from classroom video recordings, with post-session engagement timeline reports.
 
+## Quick start
+
+### Desktop application (macOS, Apple Silicon)
+
+```bash
+git clone https://github.com/Ayanami-Rei1/FocusCore.git
+cd FocusCore
+conda create -n focuscore python=3.10 -y && conda activate focuscore
+pip install -r requirements-app.txt
+python -m scripts.download_model
+python -m app.main
+```
+
+Register in the «Профиль» section: accounts, synchronization and speech
+transcription work through the project's Supabase backend right away
+(see `docs/supabase_setup.md` for how the backend is set up). On the first
+lecture macOS asks for camera and microphone access for the terminal.
+
+### Analysis core in Docker
+
+The same analysis as in the application, without the interface: a video file
+goes in, a JSON report with the engagement series and critical moments and a
+PDF report come out.
+
+```bash
+docker pull ghcr.io/ayanami-rei1/focuscore:latest
+docker run --rm -v "$PWD":/data ghcr.io/ayanami-rei1/focuscore /data/lecture.mp4
+docker run --rm ghcr.io/ayanami-rei1/focuscore --help
+```
+
+The desktop application transcribes critical moments through the account, so
+no key is needed there. The Docker image has no account and analyses
+engagement without transcription; to add it, pass your own OpenAI key:
+`-e OPENAI_API_KEY=sk-...`.
+
+To build the image locally: `docker build -f docker/analysis/Dockerfile -t focuscore .`
+
+### Tests
+
+```bash
+pip install -r requirements-test.txt
+pytest -q
+```
+
+GitHub Actions runs the tests on every push, then builds the Docker image,
+checks it on a generated video and publishes it (`.github/workflows/ci.yml`).
+
 ## Problem
 
 Teachers cannot objectively assess collective student engagement during lessons. Manual observation is subjective and inconsistent.

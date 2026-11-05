@@ -8,6 +8,7 @@ from pathlib import Path
 from app.core.report import SessionReport
 from app.db.account import current_user_id, record_remote_deletions
 from app.db.local import DB_PATH, get_connection
+from app.db.moments import load_moment_notes
 
 
 @dataclass(frozen=True)
@@ -169,6 +170,7 @@ def load_session_report(session_id: str, db_path: Path = DB_PATH) -> SessionRepo
         duration_sec=row["duration_sec"],
         threshold_pct=row["threshold"] if row["threshold"] is not None else 0,
         points=load_engagement_points(session_id, db_path),
+        notes=load_moment_notes(session_id, db_path),
     )
 
 

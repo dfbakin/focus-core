@@ -1,11 +1,14 @@
-"""Minimal client for the Supabase REST API: authentication and table access.
+"""Minimal client for the Supabase API: authentication, tables and transcription.
 
-Talks to two Supabase services over HTTPS:
-    /auth/v1  sign-up, sign-in, token refresh and user updates;
-    /rest/v1  reading and writing the sessions and engagement_points tables.
+Talks to three Supabase services over HTTPS:
+    /auth/v1                  sign-up, sign-in, token refresh and user updates;
+    /rest/v1                  the sessions and engagement_points tables;
+    /functions/v1/transcribe  speech recognition through the project's
+                              Edge Function, which keeps the OpenAI key.
 Row Level Security on the server guarantees that a user sees only own rows.
 """
 
+import threading
 from dataclasses import dataclass, replace
 
 import requests
@@ -13,6 +16,9 @@ import requests
 from app.cloud.config import CloudConfig
 
 REQUEST_TIMEOUT_SEC = 10
+TRANSCRIBE_TIMEOUT_SEC = 120
+TRANSCRIBE_PATH = "/functions/v1/transcribe"
+FUNCTION_REGION = "eu-central-1"
 UNAUTHORIZED = 401
 SERVER_ERROR = 500
 
@@ -69,6 +75,7 @@ class CloudClient:
     def __init__(self, config: CloudConfig, http: requests.Session | None = None) -> None:
         self._config = config
         self._http = http or requests.Session()
+        self._lock = threading.RLock()
         self.session: AuthSession | None = None
 
     def sign_up(self, email: str, password: str, first_name: str, last_name: str) -> AuthSession:
@@ -135,6 +142,21 @@ class CloudClient:
         if ids:
             self._request("DELETE", f"/rest/v1/{table}", params={"id": f"in.({','.join(ids)})"})
 
+    def transcribe(self, wav: bytes) -> str:
+        """Return the recognized speech of a WAV clip.
+
+        The Edge Function runs in FUNCTION_REGION, so the request to OpenAI
+        comes from a supported country and the user needs no VPN.
+        """
+        data = self._request(
+            "POST",
+            TRANSCRIBE_PATH,
+            files={"file": ("moment.wav", wav, "audio/wav")},
+            extra_headers={"x-region": FUNCTION_REGION},
+            timeout=TRANSCRIBE_TIMEOUT_SEC,
+        )
+        return str((data or {}).get("text", "")).strip()
+
     def _signed_in(self) -> AuthSession:
         """Return the current session or fail if nobody is signed in."""
         if self.session is None:
@@ -143,9 +165,10 @@ class CloudClient:
 
     def _auth_request(self, path: str, body: dict, params: dict | None = None) -> dict:
         """POST to the authentication service without a user token."""
-        response = self._send("POST", path, json=body, params=params, token=None)
-        self._raise_for_error(response)
-        return response.json()
+        with self._lock:
+            response = self._send("POST", path, json=body, params=params, token=None)
+            self._raise_for_error(response)
+            return response.json()
 
     def _request(
         self,
@@ -155,21 +178,25 @@ class CloudClient:
         json: object = None,
         params: dict | None = None,
         extra_headers: dict | None = None,
+        files: dict | None = None,
+        timeout: float = REQUEST_TIMEOUT_SEC,
     ) -> object:
-        """Authorized request; if the access token expired, refresh it once and retry."""
-        session = self._signed_in()
-        response = self._send(
-            method, path, json=json, params=params, token=session.access_token,
-            extra_headers=extra_headers,
-        )
-        if response.status_code == UNAUTHORIZED:
-            session = self.restore(session.refresh_token)
-            response = self._send(
-                method, path, json=json, params=params, token=session.access_token,
-                extra_headers=extra_headers,
-            )
-        self._raise_for_error(response)
-        return response.json() if response.content else None
+        """Authorized request; if the access token expired, refresh it once and retry.
+
+        Synchronization and transcription may run in two threads at once.
+        The lock makes them take turns, so the token is refreshed only once:
+        Supabase revokes a sign-in whose refresh token is reused.
+        """
+        options = {"json": json, "params": params, "extra_headers": extra_headers,
+                   "files": files, "timeout": timeout}
+        with self._lock:
+            session = self._signed_in()
+            response = self._send(method, path, token=session.access_token, **options)
+            if response.status_code == UNAUTHORIZED:
+                session = self.restore(session.refresh_token)
+                response = self._send(method, path, token=session.access_token, **options)
+            self._raise_for_error(response)
+            return response.json() if response.content else None
 
     def _send(
         self,
@@ -180,18 +207,19 @@ class CloudClient:
         params: dict | None,
         token: str | None,
         extra_headers: dict | None = None,
+        files: dict | None = None,
+        timeout: float = REQUEST_TIMEOUT_SEC,
     ) -> requests.Response:
         """Perform the HTTP request; network problems become CloudUnavailableError.
 
         The project key always goes in the apikey header. The Authorization
         header is added only for a signed-in user, because the newer
-        publishable keys are not tokens and must not be sent there.
+        publishable keys are not tokens and must not be sent there. For file
+        uploads requests sets the multipart Content-Type itself.
         """
-        headers = {
-            "apikey": self._config.anon_key,
-            "Content-Type": "application/json",
-            **(extra_headers or {}),
-        }
+        headers = {"apikey": self._config.anon_key, **(extra_headers or {})}
+        if files is None:
+            headers["Content-Type"] = "application/json"
         if token:
             headers["Authorization"] = f"Bearer {token}"
         try:
@@ -200,8 +228,9 @@ class CloudClient:
                 self._config.url + path,
                 json=json,
                 params=params,
+                files=files,
                 headers=headers,
-                timeout=REQUEST_TIMEOUT_SEC,
+                timeout=timeout,
             )
         except requests.RequestException as exc:
             raise CloudUnavailableError(str(exc)) from exc

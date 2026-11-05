@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS critical_moments (
     start_sec   INTEGER NOT NULL,
     end_sec     INTEGER NOT NULL,
     min_value   REAL,
+    transcript  TEXT,
     comment     TEXT,
     synced_at   TEXT,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE

@@ -128,9 +128,16 @@ def test_delete_uses_in_filter() -> None:
 
 def test_config_file(tmp_path) -> None:
     path = tmp_path / "cloud.json"
-    assert load_cloud_config(path) is None
+    assert load_cloud_config(path, tmp_path / "missing.json") is None
     path.write_text('{"url": "https://x.supabase.co/", "anon_key": "k"}')
     assert load_cloud_config(path) == CloudConfig("https://x.supabase.co", "k")
+
+
+def test_bundled_config_is_used_without_a_user_file(tmp_path) -> None:
+    bundled = tmp_path / "default.json"
+    bundled.write_text('{"url": "https://app.supabase.co", "anon_key": "public"}')
+    config = load_cloud_config(tmp_path / "missing.json", bundled)
+    assert config == CloudConfig("https://app.supabase.co", "public")
 
 
 def test_auth_requests_send_only_the_project_key() -> None:
@@ -139,3 +146,24 @@ def test_auth_requests_send_only_the_project_key() -> None:
     headers = http.calls[0]["headers"]
     assert headers["apikey"] == "anon"
     assert "Authorization" not in headers
+
+
+def test_transcription_goes_to_the_edge_function() -> None:
+    http = FakeHttp(FakeResponse(200, auth_body()), FakeResponse(200, {"text": " Привет "}))
+    client = CloudClient(CONFIG, http)
+    client.sign_in("a@b.ru", "secret1")
+    assert client.transcribe(b"RIFF") == "Привет"
+    call = http.calls[1]
+    assert call["url"] == "https://demo.supabase.co/functions/v1/transcribe"
+    assert call["files"]["file"][1] == b"RIFF"
+    assert call["headers"]["Authorization"] == "Bearer access"
+    assert call["headers"]["x-region"] == "eu-central-1"
+    assert "Content-Type" not in call["headers"]
+
+
+def test_transcription_limit_is_reported() -> None:
+    http = FakeHttp(FakeResponse(200, auth_body()), FakeResponse(429, {"error_code": "rate_limit"}))
+    client = CloudClient(CONFIG, http)
+    client.sign_in("a@b.ru", "secret1")
+    with pytest.raises(RateLimitError):
+        client.transcribe(b"RIFF")

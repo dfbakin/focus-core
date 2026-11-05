@@ -49,7 +49,12 @@ def load_account(db_path: Path = DB_PATH) -> StoredAccount | None:
 
 
 def save_account(account: StoredAccount, db_path: Path = DB_PATH) -> None:
-    """Remember the account and make sure it exists in the users table."""
+    """Remember the account and make sure it exists in the users table.
+
+    If the account was deleted on the server and registered again with the
+    same email, it gets a new id. The row of the old id keeps its sessions
+    but releases the email, which must be unique.
+    """
     write_settings(
         {
             USER_ID_KEY: account.user_id,
@@ -61,6 +66,10 @@ def save_account(account: StoredAccount, db_path: Path = DB_PATH) -> None:
         db_path,
     )
     with get_connection(db_path) as conn:
+        conn.execute(
+            "UPDATE users SET email = email || '#' || id WHERE email = ? AND id != ?",
+            (account.email, account.user_id),
+        )
         conn.execute(
             "INSERT INTO users (id, email, display_name, created_at) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(id) DO UPDATE SET email = excluded.email, "

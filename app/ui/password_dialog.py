@@ -2,7 +2,6 @@
 
 from PyQt6.QtWidgets import (
     QDialog,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -12,7 +11,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core.validation import new_password_error
-from app.ui.theme import set_role
+from app.ui.theme import form_layout, set_role
 
 
 def password_field() -> QLineEdit:
@@ -39,7 +38,7 @@ class ChangePasswordDialog(QDialog):
         self.error_label = QLabel()
         set_role(self.error_label, "error")
 
-        form = QFormLayout()
+        form = form_layout()
         form.addRow("Текущий пароль:", self.current_field)
         form.addRow("Новый пароль:", self.new_field)
         form.addRow("Повторите новый пароль:", self.repeat_field)

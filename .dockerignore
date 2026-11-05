@@ -30,3 +30,7 @@ docs/dataset_analysis.csv
 .DS_Store
 .vscode
 terminals
+
+# Local copies of the model and demo videos; the image downloads the model itself
+app/models
+*.mp4

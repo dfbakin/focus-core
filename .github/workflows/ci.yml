@@ -1,0 +1,50 @@
+# On every push: run the unit tests, then build the Docker image of the
+# analysis core, check it on a generated video and, on main, publish it to
+# the GitHub Container Registry (ghcr.io).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: requirements-test.txt
+      - name: Install test dependencies
+        run: pip install -r requirements-test.txt
+      - name: Run unit tests
+        run: pytest -q
+
+  docker:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Choose the image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - name: Build the image
+        run: docker build -f docker/analysis/Dockerfile -t "$IMAGE:latest" .
+      - name: Analyse a generated video inside the container
+        run: |
+          mkdir -p smoke
+          docker run --rm -v "$PWD/smoke":/data --entrypoint python "$IMAGE:latest" -c \
+            "import cv2, numpy as np; w = cv2.VideoWriter('/data/test.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 10, (320, 240)); [w.write(np.random.randint(0, 255, (240, 320, 3), np.uint8)) for _ in range(150)]; w.release()"
+          docker run --rm -v "$PWD/smoke":/data "$IMAGE:latest" /data/test.mp4
+          test -s smoke/test_report.json
+          test -s smoke/test_report.pdf
+      - name: Publish the image
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:latest"

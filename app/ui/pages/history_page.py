@@ -26,7 +26,7 @@ from app.core.formatting import (
 )
 from app.db.local import DB_PATH
 from app.db.sessions import SessionSummary, delete_sessions, list_sessions
-from app.ui.theme import page_title, set_role
+from app.ui.theme import set_role
 
 COLUMNS = ["", "Дата", "Длительность", "Средняя вовлечённость"]
 CHECK_COLUMN = 0
@@ -81,10 +81,8 @@ class HistoryPage(QWidget):
 
     def _build_layout(self) -> None:
         """Arrange the widgets from top to bottom."""
-        title = page_title("История сессий")
 
         layout = QVBoxLayout(self)
-        layout.addWidget(title)
         layout.addWidget(self.search_edit)
         layout.addWidget(self.table)
         layout.addWidget(self.empty_label)

@@ -1,297 +1,225 @@
-"""Visual theme of the application: colors, widget roles and the stylesheet.
+"""Visual theme: the native macOS style in a dark graphite look with one blue accent.
 
-Widgets get a "role" (a Qt dynamic property) instead of inline styles,
-and the stylesheet below decides how every role looks. The accent color is
-chosen by ACCENT_PRESET; everything else is a dark graphite palette.
+The approach follows two public sources:
+    Apple Human Interface Guidelines, «Sidebars» and «Color»: a sidebar
+        with a rounded selection, dark neutral grays and one accent color;
+    «How to Use System Default Colors in Qt Stylesheets» (pythonguis.com):
+        colors are defined once, given to the application palette and
+        reused in the stylesheet.
+
+Lists, tables and drop-down lists keep the «macos» style of Qt, which
+draws them with the system's own controls; the application asks macOS for
+the dark appearance. The stylesheet repaints what would otherwise show the
+light system grays or the bright system blue (buttons, text fields,
+sliders, scroll bars, the progress bar) and describes what macOS has no ready-made
+widget for: the sidebar, cards, the big start button and status texts.
+Widgets get a "role" (a Qt dynamic property), and the stylesheet decides
+how every role looks.
 """
 
-from pathlib import Path
+from dataclasses import dataclass
 
-from PyQt6.QtGui import QColor, QPalette
-from PyQt6.QtWidgets import QApplication, QLabel, QWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFormLayout,
+    QFrame,
+    QLabel,
+    QStyleFactory,
+    QVBoxLayout,
+    QWidget,
+)
 
-ASSETS_DIR = Path(__file__).parent / "assets"
-CHEVRON_DOWN = (ASSETS_DIR / "chevron_down.svg").as_posix()
-CHEVRON_UP = (ASSETS_DIR / "chevron_up.svg").as_posix()
+NATIVE_STYLE = "macos"
+FALLBACK_STYLE = "Fusion"
+CARD_WIDTH = 760
+FONT_FAMILY = "Helvetica Neue"
+FONT_SIZE = 14
 
-BACKGROUND = "#141416"
-SURFACE = "#1c1c1f"
-FIELD = "#232327"
-BORDER = "#34343a"
-HOVER = "#2b2b30"
-TEXT = "#f2f2f3"
-MUTED = "#a1a1aa"
-DISABLED = "#5c5c63"
-PREVIEW_BACKGROUND = "#0b0b0c"
 
-SUCCESS = "#34c38f"
-WARNING = "#e0a846"
-DANGER = "#f06a6a"
-DANGER_SOFT = "#3a2124"
+@dataclass(frozen=True)
+class Colors:
+    """Colors of the application, as '#rrggbb' strings.
 
-ACCENT_PRESETS = {
-    "emerald": {"base": "#1f9d74", "hover": "#25b385", "pressed": "#187a5a",
-                "soft": "#17362c", "on": "#ffffff"},
-    "ochre": {"base": "#c9962b", "hover": "#d9a73c", "pressed": "#a67a1f",
-              "soft": "#3a3020", "on": "#141416"},
-    "burgundy": {"base": "#9b2c42", "hover": "#b0354e", "pressed": "#7c2234",
-                 "soft": "#3a1f26", "on": "#ffffff"},
-}
-ACCENT_PRESET = "emerald"
+    A near-black background, dark gray buttons, one navy accent with a
+    lighter periwinkle tone of the same blue for lines and the selected
+    section, and muted status colors: emerald, dark amber and burgundy
+    instead of the bright system green, orange and red.
+    """
 
-_accent = ACCENT_PRESETS[ACCENT_PRESET]
-ACCENT = _accent["base"]
-ACCENT_HOVER = _accent["hover"]
-ACCENT_PRESSED = _accent["pressed"]
-ACCENT_SOFT = _accent["soft"]
-ON_ACCENT = _accent["on"]
+    background: str = "#0c0c0f"
+    sidebar: str = "#111114"
+    surface: str = "#15151a"
+    raised: str = "#1d1d23"
+    separator: str = "#26262d"
+    text: str = "#e6e6ec"
+    secondary: str = "#8b8b95"
+    accent: str = "#233a73"
+    accent_pressed: str = "#1b2e5c"
+    accent_light: str = "#6d8cf0"
+    selection: str = "#18203a"
+    selection_border: str = "#2c3c6e"
+    on_accent: str = "#ffffff"
+    green: str = "#2e9e6b"
+    yellow: str = "#c9a227"
+    orange: str = "#c8741e"
+    red: str = "#a8293d"
 
-STYLESHEET = f"""
-QWidget {{
-    font-size: 14px;
-    color: {TEXT};
-}}
-QMainWindow, QDialog, QMessageBox {{
-    background: {BACKGROUND};
-}}
 
-QWidget#sidebar {{
-    background: {SURFACE};
-    border-right: 1px solid {BORDER};
-}}
-QLabel#brand {{
-    font-size: 20px;
-    font-weight: 700;
-    color: {ACCENT};
-    padding: 4px 8px 12px 8px;
-}}
-QListWidget#menu {{
-    background: transparent;
-    border: none;
-    outline: none;
-}}
-QListWidget#menu::item {{
-    padding: 10px 12px;
-    margin: 2px 0;
-    border-radius: 8px;
-    color: {MUTED};
-}}
-QListWidget#menu::item:hover {{
-    background: {HOVER};
-    color: {TEXT};
-}}
+COLORS = Colors()
+
+
+def colors() -> Colors:
+    """Colors of the application."""
+    return COLORS
+
+
+def build_stylesheet(c: Colors) -> str:
+    """Describe the window background and the custom roles."""
+    return f"""
+QMainWindow, QWidget#content, QStatusBar {{ background: {c.background}; }}
+QStatusBar {{ color: {c.secondary}; }}
+QScrollArea#pageScroll, QScrollArea#pageScroll > QWidget > QWidget {{ background: transparent; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
+QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
+QScrollBar::handle {{ background: {c.separator}; border-radius: 3px; }}
+QScrollBar::handle:hover {{ background: {c.secondary}; }}
+QScrollBar::handle:vertical {{ min-height: 32px; }}
+QScrollBar::handle:horizontal {{ min-width: 32px; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+QWidget#sidebar {{ background: {c.sidebar}; border-right: 1px solid {c.separator}; }}
+QListWidget#menu {{ background: transparent; border: none; outline: none; }}
+QListWidget#menu {{ font-size: 15px; }}
+QListWidget#menu::item {{ padding: 0 10px; border: 1px solid transparent; border-radius: 8px; }}
 QListWidget#menu::item:selected {{
-    background: {ACCENT_SOFT};
-    color: {TEXT};
-    font-weight: 600;
+    background: {c.selection};
+    border: 1px solid {c.selection_border};
+    color: {c.accent_light};
 }}
+QToolButton#sidebarToggle {{ border: none; font-size: 16px; padding: 2px 6px; color: {c.secondary}; }}
 
-QLabel[role="pageTitle"] {{
-    font-size: 24px;
-    font-weight: 700;
-    padding-bottom: 8px;
+QLabel[role="pageTitle"] {{ font-size: 24px; font-weight: 700; padding-bottom: 8px; }}
+QLabel[role="hint"] {{ color: {c.secondary}; }}
+QLabel[role="warning"] {{ color: {c.orange}; }}
+QLabel[role="error"] {{ color: {c.red}; }}
+QLabel[role="success"] {{ color: {c.green}; }}
+QLabel[role="emptyState"] {{ color: {c.secondary}; font-size: 15px; padding: 40px; }}
+QLabel[role="timer"] {{ font-size: 44px; font-weight: 600; }}
+QLabel[role="statusIdle"] {{ font-size: 15px; color: {c.secondary}; }}
+QLabel[role="statusRunning"] {{ font-size: 15px; font-weight: 600; color: {c.green}; }}
+QLabel[role="statusPaused"] {{ font-size: 15px; font-weight: 600; color: {c.orange}; }}
+QLabel[role="statusError"] {{ font-size: 15px; font-weight: 600; color: {c.red}; }}
+QLabel[role="indicatorCaption"] {{ font-size: 16px; font-weight: 600; }}
+QLabel[role="statValue"] {{ font-size: 24px; font-weight: 700; }}
+QLabel[role="preview"] {{ background: black; color: {c.secondary}; border-radius: 10px; }}
+
+QLineEdit {{
+    background: {c.background};
+    border: 1px solid {c.separator};
+    border-radius: 6px;
+    padding: 6px 8px;
+    selection-background-color: {c.accent};
 }}
-QLabel[role="hint"] {{ color: {MUTED}; }}
-QLabel[role="warning"] {{ color: {WARNING}; }}
-QLabel[role="error"] {{ color: {DANGER}; }}
-QLabel[role="success"] {{ color: {SUCCESS}; }}
-QLabel[role="emptyState"] {{ color: {MUTED}; font-size: 16px; padding: 40px; }}
-QLabel[role="timer"] {{ font-size: 44px; font-weight: 700; }}
-QLabel[role="statusIdle"] {{ font-size: 16px; color: {MUTED}; }}
-QLabel[role="statusRunning"] {{ font-size: 16px; font-weight: 600; color: {SUCCESS}; }}
-QLabel[role="statusPaused"] {{ font-size: 16px; font-weight: 600; color: {WARNING}; }}
-QLabel[role="statusError"] {{ font-size: 16px; font-weight: 600; color: {DANGER}; }}
-QLabel[role="indicatorCaption"] {{ font-size: 17px; font-weight: 600; }}
-QLabel[role="preview"] {{
-    background: {PREVIEW_BACKGROUND};
-    color: {MUTED};
-    border: 1px solid {BORDER};
-    border-radius: 12px;
+QLineEdit:focus {{ border: 1px solid {c.accent_light}; }}
+
+QSlider::groove:horizontal {{ height: 4px; background: {c.separator}; border-radius: 2px; }}
+QSlider::sub-page:horizontal {{ background: {c.accent_light}; border-radius: 2px; }}
+QSlider::handle:horizontal {{
+    background: {c.text};
+    width: 16px;
+    height: 16px;
+    margin: -6px 0;
+    border-radius: 8px;
+}}
+QProgressBar {{
+    background: {c.separator};
+    border: none;
+    border-radius: 6px;
+    min-height: 18px;
+    max-height: 18px;
+    text-align: center;
+    color: {c.text};
+}}
+QProgressBar::chunk {{ background: {c.accent}; border-radius: 6px; }}
+
+QFrame[role="card"] {{
+    background: {c.surface};
+    border: 1px solid {c.separator};
+    border-radius: 10px;
 }}
 
 QPushButton {{
-    background: {FIELD};
-    border: 1px solid {BORDER};
-    border-radius: 8px;
-    padding: 8px 18px;
+    background: {c.raised};
+    color: {c.text};
+    border: 1px solid {c.separator};
+    border-radius: 6px;
+    padding: 6px 14px;
 }}
-QPushButton:hover {{ background: {HOVER}; }}
-QPushButton:pressed {{ background: {BORDER}; }}
-QPushButton:disabled {{ color: {DISABLED}; background: {SURFACE}; border-color: {HOVER}; }}
+QPushButton:pressed {{ background: {c.surface}; }}
+QPushButton:disabled {{ color: {c.secondary}; }}
 
 QPushButton[role="primary"], QPushButton[role="large"] {{
-    background: {ACCENT};
-    border: 1px solid {ACCENT};
-    color: {ON_ACCENT};
+    background: {c.accent};
+    color: {c.on_accent};
+    border: none;
+    border-radius: 6px;
+    padding: 7px 18px;
     font-weight: 600;
-}}
-QPushButton[role="primary"]:hover, QPushButton[role="large"]:hover {{
-    background: {ACCENT_HOVER};
-    border-color: {ACCENT_HOVER};
 }}
 QPushButton[role="primary"]:pressed, QPushButton[role="large"]:pressed {{
-    background: {ACCENT_PRESSED};
+    background: {c.accent_pressed};
 }}
-QPushButton[role="primary"]:disabled {{
-    background: {ACCENT_SOFT};
-    border-color: {ACCENT_SOFT};
-    color: {DISABLED};
-}}
-QPushButton[role="large"] {{
-    font-size: 18px;
-    border-radius: 12px;
-    padding: 16px 40px;
-}}
-QPushButton[role="danger"] {{
-    background: transparent;
-    color: {DANGER};
-    border-color: #6b3036;
-}}
-QPushButton[role="danger"]:hover {{ background: {DANGER_SOFT}; }}
-QPushButton[role="danger"]:disabled {{ color: {DISABLED}; border-color: {HOVER}; }}
-
-QLineEdit, QComboBox, QAbstractSpinBox {{
-    background: {FIELD};
-    border: 1px solid {BORDER};
-    border-radius: 8px;
-    padding: 6px 10px;
-    min-height: 22px;
-}}
-QLineEdit:focus, QComboBox:focus, QAbstractSpinBox:focus {{
-    border-color: {ACCENT};
-}}
-QLineEdit:disabled, QComboBox:disabled, QAbstractSpinBox:disabled {{
-    color: {DISABLED};
-}}
-QComboBox {{ padding-right: 28px; }}
-QComboBox::drop-down {{
-    subcontrol-origin: padding;
-    subcontrol-position: center right;
-    width: 28px;
-    border: none;
-}}
-QComboBox::down-arrow {{ image: url({CHEVRON_DOWN}); width: 12px; height: 12px; }}
-QComboBox QAbstractItemView {{
-    background: {FIELD};
-    border: 1px solid {BORDER};
-    outline: none;
-    selection-background-color: {ACCENT_SOFT};
-    selection-color: {TEXT};
-}}
-
-QAbstractSpinBox {{ padding-right: 26px; }}
-QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
-    subcontrol-origin: border;
-    width: 24px;
-    border: none;
-    background: transparent;
-}}
-QAbstractSpinBox::up-button {{ subcontrol-position: top right; }}
-QAbstractSpinBox::down-button {{ subcontrol-position: bottom right; }}
-QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {{
-    background: {HOVER};
-    border-radius: 6px;
-}}
-QAbstractSpinBox::up-arrow {{ image: url({CHEVRON_UP}); width: 10px; height: 10px; }}
-QAbstractSpinBox::down-arrow {{ image: url({CHEVRON_DOWN}); width: 10px; height: 10px; }}
-
-QSlider {{ min-height: 26px; }}
-QSlider::groove:horizontal {{
-    height: 6px;
-    background: {BORDER};
-    border-radius: 3px;
-}}
-QSlider::sub-page:horizontal {{
-    background: {ACCENT};
-    border-radius: 3px;
-}}
-QSlider::handle:horizontal {{
-    background: {TEXT};
-    border: 3px solid {ACCENT};
-    width: 12px;
-    height: 12px;
-    margin: -6px 0;
-    border-radius: 9px;
-}}
-
-QRadioButton {{ spacing: 8px; padding: 4px 12px 4px 0; }}
-
-QTableWidget {{
-    background: {SURFACE};
-    alternate-background-color: {FIELD};
-    border: 1px solid {BORDER};
-    border-radius: 10px;
-}}
-QTableWidget::item {{ padding: 6px; }}
-QHeaderView::section {{
-    background: {SURFACE};
-    color: {MUTED};
-    font-weight: 600;
-    border: none;
-    border-bottom: 1px solid {BORDER};
-    padding: 8px;
-}}
-
-QFrame[role="card"] {{
-    background: {SURFACE};
-    border: 1px solid {BORDER};
-    border-radius: 12px;
-}}
-QLabel[role="statValue"] {{ font-size: 26px; font-weight: 700; }}
-
-QListWidget#sessionList {{
-    background: {SURFACE};
-    border: 1px solid {BORDER};
-    border-radius: 10px;
-    outline: none;
-    padding: 4px;
-}}
-QListWidget#sessionList::item {{
-    padding: 8px 10px;
-    border-radius: 8px;
-    color: {MUTED};
-}}
-QListWidget#sessionList::item:hover {{ background: {HOVER}; color: {TEXT}; }}
-QListWidget#sessionList::item:selected {{ background: {ACCENT_SOFT}; color: {TEXT}; }}
-
-QTextBrowser {{
-    background: transparent;
-    border: none;
-}}
-
-QStatusBar {{ color: {MUTED}; background: {SURFACE}; border-top: 1px solid {BORDER}; }}
-QToolTip {{ background: {FIELD}; color: {TEXT}; border: 1px solid {BORDER}; padding: 6px; }}
+QPushButton[role="primary"]:disabled {{ background: {c.separator}; color: {c.secondary}; }}
+QPushButton[role="large"] {{ font-size: 17px; border-radius: 10px; padding: 14px 40px; }}
+QPushButton[role="danger"] {{ color: {c.red}; }}
 """
 
 
 def apply_theme(app: QApplication) -> None:
-    """Apply the theme to the whole application.
+    """Use the native macOS style in the dark appearance with the application colors and font.
 
-    The Fusion style draws widgets identically on every OS and fully obeys
-    the stylesheet; the palette colors the parts the stylesheet does not
-    cover, such as dialogs and checkboxes.
+    FONT_FAMILY empty means the system font of macOS (SF Pro).
+
+    On other systems, where the macOS style does not exist, Fusion is used.
+    The dark appearance is requested from the system where Qt supports it
+    (Qt 6.8 and newer); the palette makes Qt-drawn parts, such as list
+    selections and links, use the same colors.
     """
-    app.setStyle("Fusion")
+    available = [name.lower() for name in QStyleFactory.keys()]
+    app.setStyle(NATIVE_STYLE if NATIVE_STYLE in available else FALLBACK_STYLE)
+    hints = app.styleHints()
+    if hasattr(hints, "setColorScheme"):
+        hints.setColorScheme(Qt.ColorScheme.Dark)
+    app.setPalette(_palette(COLORS))
+    font = QFont(FONT_FAMILY) if FONT_FAMILY else app.font()
+    font.setPixelSize(FONT_SIZE)
+    app.setFont(font)
+    app.setStyleSheet(build_stylesheet(COLORS))
+
+
+def _palette(c: Colors) -> QPalette:
+    """Palette with the application colors for the parts Qt draws itself."""
     palette = QPalette()
     roles = {
-        QPalette.ColorRole.Window: BACKGROUND,
-        QPalette.ColorRole.WindowText: TEXT,
-        QPalette.ColorRole.Base: FIELD,
-        QPalette.ColorRole.AlternateBase: SURFACE,
-        QPalette.ColorRole.Text: TEXT,
-        QPalette.ColorRole.Button: FIELD,
-        QPalette.ColorRole.ButtonText: TEXT,
-        QPalette.ColorRole.Highlight: ACCENT,
-        QPalette.ColorRole.HighlightedText: ON_ACCENT,
-        QPalette.ColorRole.PlaceholderText: DISABLED,
-        QPalette.ColorRole.Link: ACCENT_HOVER,
-        QPalette.ColorRole.ToolTipBase: FIELD,
-        QPalette.ColorRole.ToolTipText: TEXT,
+        QPalette.ColorRole.Window: c.background,
+        QPalette.ColorRole.WindowText: c.text,
+        QPalette.ColorRole.Base: c.surface,
+        QPalette.ColorRole.AlternateBase: c.sidebar,
+        QPalette.ColorRole.Text: c.text,
+        QPalette.ColorRole.Button: c.raised,
+        QPalette.ColorRole.ButtonText: c.text,
+        QPalette.ColorRole.PlaceholderText: c.secondary,
+        QPalette.ColorRole.Highlight: c.accent,
+        QPalette.ColorRole.HighlightedText: c.on_accent,
+        QPalette.ColorRole.Accent: c.accent,
+        QPalette.ColorRole.Link: c.accent_light,
+        QPalette.ColorRole.Mid: c.separator,
     }
     for role, color in roles.items():
         palette.setColor(role, QColor(color))
-    app.setPalette(palette)
-    app.setStyleSheet(STYLESHEET)
+    return palette
 
 
 def set_role(widget: QWidget, role: str) -> None:
@@ -310,3 +238,37 @@ def page_title(text: str) -> QLabel:
     label = QLabel(text)
     set_role(label, "pageTitle")
     return label
+
+
+def form_layout() -> QFormLayout:
+    """Form with labels on the left, aligned to the left edge of the page.
+
+    On macOS a QFormLayout is centered and right-aligns its labels by
+    default, which looks out of place on a page whose title is on the left.
+    """
+    form = QFormLayout()
+    form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+    form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+    form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    form.setHorizontalSpacing(20)
+    form.setVerticalSpacing(14)
+    return form
+
+
+def card(heading: str = "") -> tuple[QFrame, QVBoxLayout]:
+    """Create a rounded panel that groups related settings, like in System Settings.
+
+    Returns the panel and its layout, into which the caller adds widgets.
+    The width is limited so that fields do not stretch across a wide window.
+    """
+    frame = QFrame()
+    set_role(frame, "card")
+    frame.setMaximumWidth(CARD_WIDTH)
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(28, 24, 28, 24)
+    layout.setSpacing(14)
+    if heading:
+        title = QLabel(heading)
+        set_role(title, "indicatorCaption")
+        layout.addWidget(title)
+    return frame, layout

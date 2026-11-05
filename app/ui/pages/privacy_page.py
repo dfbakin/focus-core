@@ -21,12 +21,14 @@ from app.core.retention import RETENTION_CHOICES_DAYS, RetentionPolicy
 from app.db.local import DB_PATH
 from app.db.maintenance import delete_expired_sessions, storage_status
 from app.db.settings import load_retention_policy, save_retention_policy
-from app.ui.theme import page_title, set_role
+from app.ui.theme import set_role
 
 PRIVACY_TEXT = (
-    "Видео- и аудиопоток не сохраняются на диск: кадры обрабатываются "
-    "в оперативной памяти и сразу удаляются. Хранятся только числовые оценки "
-    "вовлечённости, длительность занятий и ваши комментарии."
+    "Исходный видеопоток не сохраняется на диск: кадры обрабатываются "
+    "в оперативной памяти и сразу удаляются. Звук лекции тоже не записывается "
+    "на диск: он хранится в памяти только до расшифровки критических моментов "
+    "и затем удаляется. Сохраняются числовые оценки вовлечённости, "
+    "длительность занятий, расшифровки и ваши комментарии."
 )
 IRREVERSIBLE_WARNING = "Удалённые данные нельзя будет восстановить."
 NOTHING_TO_DELETE = "Устаревших записей не найдено, удалять нечего."
@@ -84,7 +86,6 @@ class PrivacyPage(QWidget):
         buttons.addStretch()
 
         layout = QVBoxLayout(self)
-        layout.addWidget(page_title("Данные и приватность"))
         layout.addWidget(self.privacy_text)
         layout.addSpacing(16)
         layout.addWidget(section)

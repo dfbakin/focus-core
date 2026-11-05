@@ -61,9 +61,26 @@ Estimates can come several times per second, so offsets have fractions.
 Row Level Security guarantees that a user can read and change only their own
 rows, even if someone obtains the public key.
 
-## 3. Connecting the application
+## 3. Transcription function
 
-Create `~/.focuscore/cloud.json` (it is not stored in the repository):
+Speech of critical moments is recognized by the OpenAI Whisper API through an
+Edge Function, so the OpenAI key stays on the server and users need neither
+their own key nor a VPN.
+
+1. **Edge Functions → Deploy a new function → Via Editor**, name it
+   `transcribe`, paste `supabase/functions/transcribe/index.ts` and deploy.
+2. In the function settings turn off **Verify JWT with legacy secret**: the
+   function checks the signed-in user itself.
+3. **Edge Functions → Secrets**: add `OPENAI_API_KEY` with the OpenAI key.
+
+The free plan includes 500,000 function calls a month; one lecture needs a few.
+
+## 4. Connecting the application
+
+The address and the public key of the FocusCore project are bundled in
+`app/cloud/default_config.json`, so the application connects to it right after
+installation. To use another project, create `~/.focuscore/cloud.json`, which
+takes priority:
 
 ```json
 {"url": "https://<project>.supabase.co", "anon_key": "<anon public key>"}
@@ -74,4 +91,6 @@ Restart the application and open the «Профиль» section.
 ## What is stored on the server
 
 Only numeric lecture data (time, duration, engagement scores) and the account
-(email, first and last name). Video and audio are never sent.
+(email, first and last name). Video and audio are never stored: short clips of
+critical moments pass through the transcription function to OpenAI and are
+not kept.

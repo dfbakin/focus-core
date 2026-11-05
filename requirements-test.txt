@@ -1,0 +1,6 @@
+# Everything the unit tests need. The tests never load the model,
+# so torch is not required.
+-r requirements-core.txt
+cv2-enumerate-cameras>=1.1
+psutil>=5.9
+pytest>=8

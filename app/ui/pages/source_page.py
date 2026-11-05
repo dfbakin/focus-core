@@ -33,7 +33,7 @@ from app.core.video_source import (
 from app.db.local import DB_PATH
 from app.db.settings import load_video_source, save_video_source
 from app.ui.image import frame_to_pixmap
-from app.ui.theme import page_title, set_role
+from app.ui.theme import set_role
 from app.ui.workers import PreviewWorker
 
 PREVIEW_WIDTH = 480
@@ -121,7 +121,6 @@ class SourcePage(QWidget):
 
     def _build_layout(self) -> None:
         """Arrange the widgets from top to bottom in the order of the scenario."""
-        title = page_title("Источник видео")
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(self.camera_radio)
@@ -142,7 +141,6 @@ class SourcePage(QWidget):
         file_row.addWidget(self.browse_button)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(title)
         layout.addWidget(self.lecture_note)
         layout.addLayout(mode_row)
         layout.addWidget(self.camera_controls)

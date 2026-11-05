@@ -9,8 +9,8 @@ from app.core.formatting import format_engagement
 from app.db.local import DB_PATH
 from app.db.settings import load_settings
 from app.ui.chart import EngagementChart
-from app.ui.indicator import LEVEL_COLORS, LEVEL_TEXTS
-from app.ui.theme import page_title, set_role
+from app.ui.indicator import LEVEL_TEXTS, level_color
+from app.ui.theme import set_role
 
 STATUS_WAITING = "Начните лекцию, чтобы увидеть график вовлечённости."
 STATUS_LIVE = "График обновляется по мере поступления оценок."
@@ -53,7 +53,6 @@ class MonitoringPage(QWidget):
         value_row.addStretch()
 
         layout = QVBoxLayout(self)
-        layout.addWidget(page_title("Мониторинг"))
         layout.addWidget(self.status_label)
         layout.addLayout(value_row)
         layout.addWidget(self.chart, stretch=1)
@@ -81,7 +80,7 @@ class MonitoringPage(QWidget):
         level = level_for_score(value)
         self.current_value.setText(format_engagement(value))
         self.current_level.setText(LEVEL_TEXTS[level])
-        self.current_level.setStyleSheet(f"color: {LEVEL_COLORS[level]};")
+        self.current_level.setStyleSheet(f"color: {level_color(level)};")
 
     def clear(self) -> None:
         """Remove the curve of the previous lecture, e.g. after signing out."""

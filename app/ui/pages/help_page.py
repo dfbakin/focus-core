@@ -4,9 +4,7 @@ from html import escape
 
 from PyQt6.QtWidgets import QTextBrowser, QVBoxLayout, QWidget
 
-from app.ui import theme
 from app.ui.help_content import FAQ, HELP_SECTIONS
-from app.ui.theme import page_title
 
 
 def build_help_html() -> str:
@@ -19,11 +17,7 @@ def build_help_html() -> str:
     parts.append("<h3>Частые вопросы</h3>")
     for question, answer in FAQ:
         parts.append(f"<p><b>{escape(question)}</b><br>{escape(answer)}</p>")
-    style = (
-        f"<style>h3 {{ color: {theme.TEXT}; margin-top: 18px; }}"
-        f"li, p {{ color: {theme.MUTED}; margin-bottom: 6px; }}"
-        f"b {{ color: {theme.TEXT}; }}</style>"
-    )
+    style = "<style>h3 { margin-top: 18px; } li, p { margin-bottom: 6px; }</style>"
     return style + "".join(parts)
 
 
@@ -35,5 +29,4 @@ class HelpPage(QWidget):
         browser = QTextBrowser()
         browser.setHtml(build_help_html())
         layout = QVBoxLayout(self)
-        layout.addWidget(page_title("Помощь"))
         layout.addWidget(browser)

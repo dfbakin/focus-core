@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -30,7 +31,7 @@ from app.cloud.sync import SyncResult
 from app.core.formatting import plural
 from app.core.validation import is_valid_email, registration_error
 from app.ui.password_dialog import ChangePasswordDialog, password_field
-from app.ui.theme import page_title, set_role
+from app.ui.theme import card, form_layout, page_title, set_role
 from app.ui.workers import TaskWorker
 
 OFFLINE_TEXT = (
@@ -50,7 +51,8 @@ RATE_LIMIT_TEXT = "Слишком много попыток за коротко�
 SERVER_ERROR_TEXT = "Сервер не смог выполнить запрос. Попробуйте ещё раз позже."
 
 LOGIN_VIEW, REGISTER_VIEW, PROFILE_VIEW = 0, 1, 2
-FORM_WIDTH = 420
+FORM_WIDTH = 520
+PROFILE_WIDTH = 640
 SHUTDOWN_WAIT_MS = 3000
 
 
@@ -86,9 +88,10 @@ class ProfilePage(QWidget):
         self.stack.addWidget(self._build_login_view())
         self.stack.addWidget(self._build_register_view())
         self.stack.addWidget(self._build_profile_view())
+        self.stack.currentChanged.connect(self._fit_stack_to_view)
         self.message_label = QLabel()
         self.message_label.setWordWrap(True)
-        self.title_label = page_title("Профиль")
+        self.title_label = page_title("Добро пожаловать в FocusCore")
         self.welcome_label = QLabel("Войдите или зарегистрируйтесь, чтобы начать работу.")
         set_role(self.welcome_label, "hint")
 
@@ -98,6 +101,7 @@ class ProfilePage(QWidget):
         layout.addWidget(self.stack, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.message_label)
         layout.addStretch()
+        self._fit_stack_to_view(self.stack.currentIndex())
         self._show_account_or_login()
 
     def _build_login_view(self) -> QWidget:
@@ -111,7 +115,7 @@ class ProfilePage(QWidget):
         self.login_password.returnPressed.connect(self._on_login_clicked)
         to_register = self._link("Нет учётной записи? Зарегистрироваться", REGISTER_VIEW)
 
-        form = QFormLayout()
+        form = form_layout()
         form.addRow("Электронная почта:", self.login_email)
         form.addRow("Пароль:", self.login_password)
         return self._form_view("Вход", form, login_button, to_register)
@@ -129,7 +133,7 @@ class ProfilePage(QWidget):
         register_button.clicked.connect(self._on_register_clicked)
         to_login = self._link("Уже есть учётная запись? Войти", LOGIN_VIEW)
 
-        form = QFormLayout()
+        form = form_layout()
         form.addRow("Имя:", self.reg_first_name)
         form.addRow("Фамилия:", self.reg_last_name)
         form.addRow("Электронная почта:", self.reg_email)
@@ -157,37 +161,61 @@ class ProfilePage(QWidget):
         set_role(logout_button, "danger")
         logout_button.clicked.connect(self._on_logout_clicked)
 
-        form = QFormLayout()
+        form = form_layout()
         form.addRow("Имя:", self.profile_first_name)
         form.addRow("Фамилия:", self.profile_last_name)
+        personal, personal_layout = card("Личные данные")
+        personal_layout.addLayout(form)
+        personal_layout.addWidget(save_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
-        buttons = QHBoxLayout()
-        for button in (save_button, password_button, sync_button, logout_button):
-            buttons.addWidget(button)
+        account, account_layout = card("Учётная запись")
+        account_layout.addWidget(self.account_label)
+        account_buttons = QHBoxLayout()
+        account_buttons.addWidget(password_button)
+        account_buttons.addStretch()
+        account_buttons.addWidget(logout_button)
+        account_layout.addLayout(account_buttons)
+
+        sync, sync_layout = card("Синхронизация")
+        sync_layout.addWidget(self.sync_label)
+        sync_layout.addWidget(sync_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         view = QWidget()
+        view.setFixedWidth(PROFILE_WIDTH)
         layout = QVBoxLayout(view)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.account_label)
-        layout.addLayout(form)
-        layout.addSpacing(8)
-        layout.addLayout(buttons)
-        layout.addWidget(self.sync_label)
+        layout.setSpacing(16)
+        for section in (personal, account, sync):
+            layout.addWidget(section)
         return view
 
     def _form_view(self, title: str, form: QFormLayout, button: QPushButton, link: QLabel) -> QWidget:
         """Common layout of the sign-in and registration forms."""
-        heading = QLabel(title)
-        set_role(heading, "indicatorCaption")
-        view = QWidget()
-        view.setFixedWidth(FORM_WIDTH)
-        layout = QVBoxLayout(view)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(heading)
+        panel, layout = card(title)
+        panel.setFixedWidth(FORM_WIDTH)
         layout.addLayout(form)
         layout.addWidget(button, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(link)
+
+        view = QWidget()
+        view_layout = QVBoxLayout(view)
+        view_layout.setContentsMargins(0, 0, 0, 0)
+        view_layout.addWidget(panel)
+        view_layout.addStretch()
         return view
+
+    def _fit_stack_to_view(self, index: int) -> None:
+        """Let the stack take the height of the shown view only.
+
+        A QStackedWidget is as tall as its tallest page by default, which
+        would push the message below the forms far down the window.
+        """
+        for position in range(self.stack.count()):
+            view = self.stack.widget(position)
+            policy = QSizePolicy.Policy.Preferred if position == index else QSizePolicy.Policy.Ignored
+            view.setSizePolicy(policy, policy)
+            view.adjustSize()
+        self.stack.adjustSize()
 
     def _link(self, text: str, view_index: int) -> QLabel:
         """A clickable text that switches to another form."""
@@ -393,7 +421,7 @@ class ProfilePage(QWidget):
     def _show_account_or_login(self) -> None:
         """Show the profile if an account is remembered, otherwise the sign-in form."""
         account = self._service.account
-        self.title_label.setText("Профиль" if account else "Добро пожаловать в FocusCore")
+        self.title_label.setVisible(account is None)
         self.welcome_label.setVisible(account is None)
         if account is None:
             if self.stack.currentIndex() == PROFILE_VIEW:

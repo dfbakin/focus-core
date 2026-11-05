@@ -7,6 +7,8 @@ All methods are blocking; the interface calls them from a background thread.
 
 from pathlib import Path
 
+import numpy as np
+
 from app.cloud.client import (
     AuthSession,
     CloudClient,
@@ -15,6 +17,7 @@ from app.cloud.client import (
 )
 from app.cloud.config import load_cloud_config
 from app.cloud.sync import SyncResult, synchronize
+from app.core.transcription import encode_wav
 from app.db.account import StoredAccount, clear_account, load_account, save_account
 from app.db.local import DB_PATH, LOCAL_USER_ID
 from app.db.sessions import reassign_sessions
@@ -102,6 +105,17 @@ class AccountService:
         client.sign_in(account.email, current_password)
         client.change_password(new_password)
         self._save_tokens()
+
+    def transcribe(self, samples: np.ndarray, sample_rate: int) -> str:
+        """Recognize speech in a clip through the project's Edge Function.
+
+        Has the same signature as WhisperClient.transcribe, so the
+        transcription code works with either of them.
+        """
+        self._ensure_signed_in()
+        text = self._cloud().transcribe(encode_wav(samples, sample_rate))
+        self._save_tokens()
+        return text
 
     def sign_out(self) -> None:
         """Forget the account on this device; sessions stay in the local database."""

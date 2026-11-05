@@ -67,7 +67,7 @@ def _running_page(
     db_path: Path, clock: FakeClock, source_kind: str = CAMERA, stop_takes_sec: float = 0.0
 ) -> LecturePage:
     """A page in the RUNNING state with a stored session and a stub worker."""
-    page = LecturePage(db_path)
+    page = LecturePage(db_path=db_path)
     page._session_id = create_session(source_kind, 40, db_path, started_at=START)
     page._is_file = source_kind == FILE
     page._smoother = ExponentialMovingAverage(1)

@@ -1,14 +1,18 @@
-"""Export of a lecture report to a one-page PDF (user scenario 5).
+"""Export of a lecture report to PDF (user scenarios 5 and 6).
 
-Uses the object-oriented matplotlib API without pyplot, so it works without
-a display and does not interfere with the Qt event loop. Fonts are embedded
-as TrueType, so the Cyrillic text in the PDF can be selected and copied.
+The first page holds the summary and the chart; the list of critical
+moments with transcripts and comments continues on further pages when it
+does not fit. Uses the object-oriented matplotlib API without pyplot, so it
+works without a display and does not interfere with the Qt event loop.
+Fonts are embedded as TrueType, so the Cyrillic text can be selected.
 """
 
+import textwrap
 from datetime import datetime
 from pathlib import Path
 
 import matplotlib
+from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.figure import Figure
 
 from app.core.formatting import (
@@ -25,7 +29,11 @@ TEXT_COLOR = "#1f2430"
 MUTED_COLOR = "#6b7280"
 THRESHOLD_COLOR = "#b45309"
 CRITICAL_COLOR = "#dc2626"
-MAX_LISTED_MOMENTS = 16
+WRAP_CHARACTERS = 100
+LINE_STEP = 0.019
+PARAGRAPH_GAP = 0.012
+PAGE_TOP = 0.94
+PAGE_BOTTOM = 0.07
 SECONDS_IN_MINUTE = 60
 EMBEDDED_FONT_TYPE = 42
 
@@ -44,13 +52,16 @@ def export_report_pdf(report: SessionReport, path: Path) -> None:
     _draw_header(figure, report)
     _draw_summary(figure, report)
     _draw_chart(figure, report)
-    _draw_moments(figure, report)
-    figure.text(
-        LEFT, 0.03, f"Сформировано FocusCore {format_datetime(datetime.now())}",
-        fontsize=7, color=MUTED_COLOR,
-    )
+    pages = _draw_moments(figure, report)
+
+    footer = f"Сформировано FocusCore {format_datetime(datetime.now())}"
     with matplotlib.rc_context({"pdf.fonttype": EMBEDDED_FONT_TYPE}):
-        figure.savefig(path, format="pdf")
+        with PdfPages(path) as pdf:
+            for number, page in enumerate(pages, start=1):
+                page.text(LEFT, 0.03, footer, fontsize=7, color=MUTED_COLOR)
+                page.text(1 - LEFT, 0.03, str(number), fontsize=7, color=MUTED_COLOR,
+                          ha="right")
+                pdf.savefig(page)
 
 
 def _draw_header(figure: Figure, report: SessionReport) -> None:
@@ -105,24 +116,62 @@ def _draw_chart(figure: Figure, report: SessionReport) -> None:
         axes.spines[side].set_visible(False)
 
 
-def _draw_moments(figure: Figure, report: SessionReport) -> None:
-    """List of critical moments with wall-clock times."""
+class _TextFlow:
+    """Writes lines from top to bottom and starts a new page when needed."""
+
+    def __init__(self, first_page: Figure, top: float) -> None:
+        self.pages = [first_page]
+        self._y = top
+
+    def line(self, text: str, **style) -> None:
+        """Write one line of text."""
+        if self._y < PAGE_BOTTOM:
+            self._new_page()
+        self.pages[-1].text(LEFT, self._y, text, **style)
+        self._y -= LINE_STEP
+
+    def paragraph(self, text: str, **style) -> None:
+        """Write text wrapped to the page width."""
+        for line in textwrap.wrap(text, WRAP_CHARACTERS):
+            self.line(line, **style)
+
+    def gap(self) -> None:
+        """Leave some space between blocks."""
+        self._y -= PARAGRAPH_GAP
+
+    def _new_page(self) -> None:
+        """Add a page that continues the list of moments."""
+        page = Figure(figsize=A4_INCHES)
+        page.text(LEFT, PAGE_TOP, "Критические моменты (продолжение)", fontsize=13,
+                  weight="bold", color=TEXT_COLOR)
+        self.pages.append(page)
+        self._y = PAGE_TOP - 0.04
+
+
+def _draw_moments(figure: Figure, report: SessionReport) -> list[Figure]:
+    """List critical moments with wall-clock times, transcripts and comments.
+
+    Returns all pages of the report, starting with `figure`.
+    """
     figure.text(LEFT, 0.46, "Критические моменты", fontsize=13, weight="bold", color=TEXT_COLOR)
+    flow = _TextFlow(figure, top=0.43)
     moments = report.critical_moments
     if not moments:
-        figure.text(LEFT, 0.43, "Критических моментов не зафиксировано.", fontsize=10,
-                    color=MUTED_COLOR)
-        return
+        flow.line("Критических моментов не зафиксировано.", fontsize=10, color=MUTED_COLOR)
+        return flow.pages
 
-    y = 0.43
-    for moment in moments[:MAX_LISTED_MOMENTS]:
+    for moment in moments:
         start = format_time(report.clock_time(moment.start_sec))
         end = format_time(report.clock_time(moment.end_sec))
-        figure.text(
-            LEFT, y, f"{start} – {end}    минимум {format_engagement(moment.min_value)}",
-            fontsize=10, color=TEXT_COLOR,
+        flow.line(
+            f"{start} – {end}    минимум {format_engagement(moment.min_value)}",
+            fontsize=10, weight="bold", color=TEXT_COLOR,
         )
-        y -= 0.022
-    hidden = len(moments) - MAX_LISTED_MOMENTS
-    if hidden > 0:
-        figure.text(LEFT, y, f"… и ещё {hidden}", fontsize=10, color=MUTED_COLOR)
+        note = report.note_for(moment)
+        for part in note.transcript_parts:
+            flow.paragraph(f"«{part}»", fontsize=9, color=TEXT_COLOR)
+        if note.comment:
+            flow.paragraph(f"Комментарий: {note.comment}", fontsize=9, color=MUTED_COLOR,
+                           style="italic")
+        flow.gap()
+    return flow.pages
