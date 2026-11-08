@@ -1,0 +1,6 @@
+outs:
+- md5: a3b8527b0ed26ec9696964889f584e1a.dir
+  size: 176668523
+  nfiles: 210
+  hash: md5
+  path: research
