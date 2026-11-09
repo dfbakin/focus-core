@@ -1,0 +1,6 @@
+outs:
+- md5: e7da4ccc45fbefeb4a1f1191e2eb1f39.dir
+  size: 9253522988
+  nfiles: 1788
+  hash: md5
+  path: research_gpu

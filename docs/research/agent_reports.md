@@ -521,3 +521,245 @@ In `/home/dfbakin/Documents/focus-core/`:
 Agent usage: 163 tool calls, ~579k tokens, 80 min wall.
 
 **Supervisor notes (2026-11-08).** Reviewed the QC section and all seven figures. Verdict in `docs/research/10_reconstruction_qc_and_protocol.md`. Tiers 0 and 1 are sound; fallbacks touch 3 clips; the structural fallback was never used; the 14 unassigned recordings all have enough audio to have been linked if a partner existed. Two additions of my own: (1) `05g` extracted full-resolution frames of the three cross-class synchronous events and shows the same group at the same instant under `low` and `mid` labels (880 clips, 30% of `mid`); the agent had left this open at 128x72. (2) `05h` united events with the October scene clusters: 16 groups, no cross-fold neighbour under 27.5 on any channel, but one group holds 66% of `high`. The event-disjoint folds alone leave 15.7% of clips with a same-scene neighbour across folds and two missed-merge pairs at 3.09 and 7.85. The layout labels in `sessions_recordings_sheet.png` were checked by eye: the 8 rectangular-desk recordings are correctly marked. The brief's count of 92 single-frame audio clips was wrong; the agent's 166 is right (it matches `a0_frames == 1` in the raw audit).
+
+
+## 2026-11-08 — GPU experiment code A–E (Opus 5.5 agent, verbatim hand-back, first round)
+
+Brief: implement section 6 of `docs/research/11_gpu_experiment_plan.md` (roots materialiser, host runner, aggregator, metadata tree, frozen probe), CPU-tested locally, no host access. Supervisor notes follow.
+
+### Report: GPU experiment code for the OUC-CGE leak gradient (A–E)
+
+All five scripts are written and CPU-tested here. Nothing touched the GPU, and there were no dvc, git commit/push or ssh calls.
+
+**Most important finding: G1 group ids are not event ids.** The brief assumed they were. `05h_union_groups.py` relabels the connected components, so the ids differ for all 7,701 clips (0 of 7,701 match).
+- I checked this against `clip_sessions.csv`: `event_id` is identical in both tables, and the mapping is one-to-one (45 events ↔ 45 G1 groups).
+- Events 9, 11 and 18 are **G1 groups 34, 40 and 44**. These are the only three multi-class G1 groups, with 345 + 155 + 380 = 880 clips.
+- G1 ids 9, 11 and 18 are single-class events 6, 0 and 23. Excluding them by number would have been wrong.
+- So 06 maps the events through `event_id` and excludes groups 34, 40 and 44 from the P1 validation candidates. The mapping is printed and stored in `val_groups.json`.
+
+#### A. Roots (`06_make_protocol_roots.py`)
+Runs in 1.1 s with 119 MB peak RSS. All checks passed: each clip is in exactly one split per fold, no group crosses splits, and the five test folds partition the 7,701 clips. The manifests are re-read from disk and compared with the intended split, and a rerun gives byte-identical files.
+
+Counts are low/mid/high. Validation groups are listed in the order the greedy rule added them.
+
+| root | train | val | val groups | val % of pool, L1 | test |
+|---|---|---|---|---|---|
+| p1_f0 | 5517 (2147/1458/1912) | 517 (185/185/147) | 18, 7, 33, 19, 39 | 8.6%, 0.171 | 1667 (696/398/573) |
+| p1_f1 | 5670 (2221/1470/1979) | 542 (210/185/147) | 19, 7, 39, 21, 33 | 8.7%, 0.150 | 1489 (597/386/506) |
+| p1_f2 | 5709 (2277/1465/1967) | 517 (185/185/147) | 18, 7, 39, 19, 33 | 8.3%, 0.186 | 1475 (566/391/518) |
+| p1_f3 | 5574 (2220/1386/1968) | 603 (237/219/147) | 18, 7, 33, 21, 35 | 9.8%, 0.207 | 1524 (571/436/517) |
+| p1_f4 | 5587 (2193/1489/1905) | 568 (237/122/209) | 18, 5, 35, 21 | 9.2%, 0.094 | 1546 (598/430/518) |
+| p2_f0 | 5592 (1765/1386/2441) | 835 (501/277/57) | 9 | 13.0%, 0.641 | 1274 (762/378/134) |
+| p2_f1 | 6072 (2294/1386/2392) | 745 (233/378/134) | 13 | 10.9%, 0.497 | 884 (501/277/106) |
+| p2_f2 | 5663 (2254/1219/2190) | 745 (233/378/134) | 13 | 11.6%, 0.516 | 1293 (541/444/308) |
+| p2_f3 | 5413 (2074/1197/2142) | 745 (233/378/134) | 13 | 12.1%, 0.503 | 1543 (721/466/356) |
+| p2_f4 | 4538 (2249/1385/904) | 456 (276/180/0) | 12 | 9.1%, 0.362 | 2707 (503/476/1728) |
+
+Label-conflict clips per split:
+- **P1:** f0 train 500, test 380; f1 train 880; f2 train 380, test 500; f3 and f4 train 880.
+- **P2:** f0 train 725, val 155; f1 train 725, test 155; f2 train 880; f3 train 500, test 380; f4 train 535, test 345.
+
+I also added `/data/p1_f*/` and `/data/p2_f*/` to `.gitignore` after the `/data/grp*/` line.
+
+#### B. Runner (`06b_run_protocols.sh`), DRY=1 summary
+The DRY run prints 26 blocks (probe plus 25 runs), each with its training, evaluation and cleanup commands:
+```
+DRY SUMMARY: to run: probe=1 r50=20 slow=5 (already done, skipped: 0); dropped by budget: none
+DRY SUMMARY: projected wall time 260 min (estimates: probe 10, r50 8, slow 18 min per run incl. evaluation)
+DRY SUMMARY: all needed roots and inputs exist
+```
+- **Budget:** `BUDGET_MIN=150` drops slow_p2 and then r50_p2 seed 44 (projected 130 min). 200 and 250 drop slow_p2 only; 300 drops nothing. The drop set is recomputed at every decision point from measured run times, so a block dropped on early estimates can come back.
+- **Other checks:** the RUNS filter works for run names and block names. In a copy of the layout with no data, DRY lists every missing root and exits 2. A non-DRY call with `CUDA_VISIBLE_DEVICES=""` aborts with exit 3 before writing anything.
+- **Post-training logic:** tested in a scratch layout with stub training, evaluator, torch and nvidia-smi:
+  - Ties go to the earliest epoch.
+  - Seed 42 keeps the best and final epoch plus `last.ckpt`; seeds 43/44 delete all checkpoints.
+  - A failed epoch evaluation keeps the checkpoints and writes no done marker. A rerun resumes without retraining and evaluates only the missing epoch.
+  - A failed training run aborts with its exit code; FORCE=1 retrains and re-evaluates.
+- **Hydra overrides:** composed through Hydra's compose API. They give seed 43, `save_top_k=-1`, the epoch counts, early stopping (15,10) for r50 and (5,5) for slow, the paths and `mlflow.experiment_name=research_protocols`.
+
+#### C. Aggregator (`06c_aggregate.py`), what it reproduced
+I copied the October prediction files under the new tag names into a scratch layout and ran C on it. It reproduced the October summaries' test accuracies (val-selected checkpoint):
+
+| run | accuracy |
+|---|---|
+| p0 r50 | 0.9935 |
+| grp27a r50 | 0.5032 |
+| grp27b r50 | 0.5266 |
+| grp17 r50 | 0.6903 |
+| grp27a slow | 0.5180 |
+
+R2's macro-F1 is 0.4592, matching October's 0.459223. Every metric is cross-checked against sklearn inside the script, which aborts on any mismatch.
+
+The reference section (built from the original October files) reproduces:
+- `last.ckpt` accuracies: 0.9948, 0.4378, 0.5451, 0.7591, 0.3991.
+- Final epochs from `epoch_curve.csv`: R2 0.3951, R3 0.5225, R4 0.7701, R5 0.3926; the repeat run's val-selected R5 is 0.5206.
+
+New numbers from the October per-clip predictions (val-selected), all clips → conflict clips excluded:
+
+| run | balanced accuracy | accuracy |
+|---|---|---|
+| R1 published | 0.9946 → 0.9952 | — |
+| R2 grp27a | 0.4730 (no conflict clips in test) | — |
+| R3 grp27b | 0.4869 → 0.4958 | 0.5266 → 0.5556 |
+| R4 grp17 | 0.6469 → 0.6903 | 0.6903 → 0.7833 (243 conflict clips in its test set) |
+| R5 grp27a slow | 0.4770 | — |
+
+To exercise the P1/P2 paths I also built synthetic files: the scratch probe fit described under E, plus perturbed per-epoch and per-seed copies of it, with one fold missing, one inconsistent final epoch and one unknown tag. C reported 4/5 folds where expected, flagged the inconsistent final, ignored the unknown tag, and produced every table and the figure. Runtime was 7.9 s for 330 files at 304 MB.
+
+#### D. Metadata tree (`06d_metadata_tree.py`)
+Features come from the raw-release container headers; the tree is trained on each root's train split and scored on test.
+
+| protocol | fold | n test | acc | bal acc | κ | majority |
+|---|---|---|---|---|---|---|
+| P0 | published | 771 | 0.534 | 0.476 | 0.235 | 0.422 |
+| P1 | 0 / 1 / 2 / 3 / 4 | 1667 / 1489 / 1475 / 1524 / 1546 | 0.386 / 0.567 / 0.544 / 0.322 / 0.486 | 0.367 / 0.542 / 0.514 / 0.300 / 0.450 | 0.014 / 0.312 / 0.279 / −0.056 / 0.193 | 0.418 / 0.401 / 0.384 / 0.375 / 0.387 |
+| P1 | pooled | 7701 | 0.459 | 0.430 | 0.144 | 0.393 |
+| P2 | 0 / 1 / 2 / 3 / 4 | 1274 / 884 / 1293 / 1543 / 2707 | 0.276 / 0.258 / 0.531 / 0.345 / 0.226 | 0.252 / 0.278 / 0.449 / 0.407 / 0.411 | −0.043 / −0.021 / 0.215 / 0.094 / 0.052 | 0.598 / 0.567 / 0.418 / 0.467 / 0.638 |
+| P2 | pooled | 7701 | 0.313 | 0.305 | −0.064 | 0.393 |
+
+The top features are duration bin, width/height and audio tracks. The export-batch shortcut partly survives P1 and is gone under P2. These are raw-release headers; the models see uniform 320p re-encodes, so this measures batch structure in the release, not a feature the network can read directly.
+
+#### E. Probe (`06e_probe.py`), smoke test
+- 40 clips, evenly spaced over the sorted paths, all decoded with PyAV on CPU with 2 workers.
+- The frame index is n_frames // 2 (300 → 150), the same frame the project's resnet50 evaluation takes.
+- 2048-d features came out in 5–6 s, then 14 fits (P0, P1 f0–4, P2 f0–4, grp27a/b, grp17) wrote 56 files under the 06b tag names.
+- Wall time 12–15 s; peak RSS of the whole process tree 1.54–1.68 GB.
+
+I also ran the fit stage at full size on the October 32×32 centre-frame thumbnails as a test input (not the planned probe): 14 fits in 87 s at 719 MB. Balanced accuracy, all clips (excl. in brackets): published 0.949, P1 0.405 (0.380), P2 0.399 (0.391), grp17 0.729, grp27b 0.440, grp27a 0.394.
+
+#### Wall time and memory
+- A 1.1 s / 119 MB; D 2.1 s / 203 MB; C 4–8 s / ≤ 304 MB; E smoke 12–15 s / ≤ 1.68 GB; thumbnail fit test 87 s / 719 MB.
+- At most about 0.93 GB was in use at once.
+
+#### Deviations and open points
+1. **Memory limit for E:** `ulimit -v 3000000` makes torch impossible to import here (the CUDA build maps 4.6 GB of address space at import). I ran E under `ulimit -v 6000000` and measured the real RSS instead. A, C and D ran under the 3 GB limit.
+2. **More than one validation group:** the brief's rule picks 4–5 G1 groups under P1, not the plan's "one whole group". Under P2 it picks one group:
+   - P2 folds 1–3 all share G2 group 13.
+   - Fold 4's validation group (12) has no `high` clips.
+   - Fold 0's validation group (9) contains 155 label-conflict clips; the exclusion was P1-only as briefed.
+3. **P1 validation may not select well:** the thumbnail fit scored 0.09–0.25 balanced accuracy on the P1 validation groups, below chance, against 0.28–0.53 on test. The val-selected checkpoint under P1 may carry little signal; the final epoch and the full epoch curve are reported alongside it.
+4. **`last.ckpt` is kept for seed 42:** it is Lightning's second save of the final epoch, not byte-identical to the epoch file, so each seed-42 run keeps 3 files. Use `rsync --exclude last.ckpt` to avoid transferring it twice.
+5. **Train split only:** the probe and the metadata tree train on the root's train split, not train+val, so they see the same clips as the deep runs. The probe's "final" rule is the same single fit as its "best".
+6. **October references:** a "final epoch" for R2–R5 exists only as accuracy and macro-F1 in `epoch_curve.csv`; there are no per-clip predictions behind it, so no balanced accuracy, κ or exclusion.
+7. **Runtime on the host:** about 260 min with per-epoch evaluation, against the plan's 3 h. The R50, SLOW and probe time estimates can be overridden.
+8. **Extra summary folder:** 06b adds `$OUT/state/` for the trained/done markers and the best/final epoch json.
+9. **Host setup:** the roots are gitignored. Run `python scripts/research/06_make_protocol_roots.py` on the host after `dvc pull` and before 06b. The committed DVC pointer lists 210 files, matching the local `outputs/research`, so the session tables should be in it. `DRY=1` will catch any missing root.
+10. **DVC status:** writing `outputs/research/protocols/` inside the DVC-tracked `outputs/research` will make `dvc status` report it as modified.
+11. **Results doc not yet written:** I did not generate `docs/research/12_leak_gradient_results.md` or `docs/research/img/leak_gradient.png`, since there are no GPU results yet. Running `06c_aggregate.py` with its defaults after the rsync creates both. A preview from the synthetic test is in the scratchpad.
+
+#### Files created or changed
+Created: `scripts/research/06_make_protocol_roots.py`, `06b_run_protocols.sh`, `06c_aggregate.py`, `06d_metadata_tree.py`, `06e_probe.py`; `data/p1_f0..4`, `data/p2_f0..4` (gitignored); `outputs/research/protocols/{roots.csv,val_groups.json,metadata_tree.csv}`; torchvision ResNet50 weights in `~/.cache/torch/hub/checkpoints/`. Changed: `.gitignore` (2 lines).
+
+**Supervisor notes (2026-11-08).** Sent back for three fixes before launch: (1) exclude label-conflict groups from validation under both protocols and require all three classes (≥ 30 clips each) in every validation set, because P2 fold 4 had no `high` clips in validation and fold 0's validation group held 155 conflict clips; (2) per-epoch test evaluation for seed-42 runs only (switch `EPOCH_CURVE`), seeds 43/44 evaluate best-by-val and final only; (3) rerun roots and DRY. The thumbnail-probe result under P1 validation (below chance) is noted: P1 validation sets are a handful of small single-class events, so the val-selected checkpoint is reported next to the final epoch, as planned. The metadata tree already answers one plan question before any GPU time: the export-batch shortcut survives P1 (pooled balanced accuracy 0.43 vs 0.39 majority) and vanishes under P2 (0.31).
+
+
+## 2026-11-08 — GPU experiment code, second round (same agent, verbatim hand-back)
+
+### Report: the three pre-launch changes
+
+All three changes are in, and the roots and checks pass. P2 validation now excludes the conflict groups and has all three classes in every fold, fold 4 included. The DRY run projects 250 min, down from 260.
+
+#### 1. Validation rule in `06_make_protocol_roots.py`
+- **Conflict exclusion, both protocols:** the excluded groups are now taken from the data — every group holding a clip with event_id 9, 11 or 18.
+  - P1: G1 groups 34, 40, 44. The script checks this equals the event mapping.
+  - P2: G2 groups 9, 10, 15.
+- **Class coverage (at least 30 clips of each class):**
+  - Whether coverage is possible within the 15% cap is decided exactly, by a small search for the smallest group set that covers all three classes. I checked that search against brute force on 300 random cases with 0 mismatches.
+  - While coverage is not yet met but still possible, the L1 greedy only picks groups after which coverage stays reachable within the cap.
+  - It stops at 8% of the pool once coverage is met (or if coverage is impossible). The 1% floor, the 15% cap and the smaller-id tie-break are unchanged.
+- **Stored per fold** in `val_groups.json`: validation class counts, whether coverage was achievable, whether it was achieved, and the excluded groups. Each fold's line also prints them.
+- **Coverage:** achievable and achieved in all ten folds.
+- **What changed on disk:** P1 is identical to the previous version, every manifest byte for byte. Only `p2_f0` and `p2_f4` train/val changed; all test sets are unchanged.
+
+Counts are low/mid/high; validation groups are in the order the greedy added them:
+
+| root | train | val | val groups | val % of pool, L1 | coverage | test |
+|---|---|---|---|---|---|---|
+| p1_f0 | 5517 (2147/1458/1912) | 517 (185/185/147) | 18, 7, 33, 19, 39 | 8.6%, 0.171 | yes | 1667 (696/398/573) |
+| p1_f1 | 5670 (2221/1470/1979) | 542 (210/185/147) | 19, 7, 39, 21, 33 | 8.7%, 0.150 | yes | 1489 (597/386/506) |
+| p1_f2 | 5709 (2277/1465/1967) | 517 (185/185/147) | 18, 7, 39, 19, 33 | 8.3%, 0.186 | yes | 1475 (566/391/518) |
+| p1_f3 | 5574 (2220/1386/1968) | 603 (237/219/147) | 18, 7, 33, 21, 35 | 9.8%, 0.207 | yes | 1524 (571/436/517) |
+| p1_f4 | 5587 (2193/1489/1905) | 568 (237/122/209) | 18, 5, 35, 21 | 9.2%, 0.094 | yes | 1546 (598/430/518) |
+| p2_f0 | 5663 (1990/1483/2190) | 764 (276/180/308) | 12, 2 | 11.9%, 0.046 | yes | 1274 (762/378/134) |
+| p2_f1 | 6072 (2294/1386/2392) | 745 (233/378/134) | 13 | 10.9%, 0.497 | yes | 884 (501/277/106) |
+| p2_f2 | 5663 (2254/1219/2190) | 745 (233/378/134) | 13 | 11.6%, 0.516 | yes | 1293 (541/444/308) |
+| p2_f3 | 5413 (2074/1197/2142) | 745 (233/378/134) | 13 | 12.1%, 0.503 | yes | 1543 (721/466/356) |
+| p2_f4 | 4249 (2292/1187/770) | 745 (233/378/134) | 13 | 14.9% (cap 749.1), 0.388 | yes | 2707 (503/476/1728) |
+
+P2 fold 4 now has 134 `high` clips in validation (group 13: 745 clips against a cap of 749.1).
+
+Label-conflict clips per split. Validation now holds none in every fold:
+
+| root | train | val | test |
+|---|---|---|---|
+| p1_f0 | 500 | 0 | 380 |
+| p1_f1 | 880 | 0 | 0 |
+| p1_f2 | 380 | 0 | 500 |
+| p1_f3 | 880 | 0 | 0 |
+| p1_f4 | 880 | 0 | 0 |
+| p2_f0 | 880 | 0 | 0 |
+| p2_f1 | 725 | 0 | 155 |
+| p2_f2 | 880 | 0 | 0 |
+| p2_f3 | 500 | 0 | 380 |
+| p2_f4 | 535 | 0 | 345 |
+
+Things you should know:
+- **Same validation group in four folds:** P2 folds 1–4 all validate on G2 group 13. Fold 0 uses groups 12 + 2.
+- **Fold 4 training set:** group 12 (456 clips, low/mid) went back into fold 4's training set, so fold 4 trains on 4,249 clips with only 770 `high`.
+- **Metadata tree rerun:** `metadata_tree.csv` was computed on the old P2 roots, so I reran the unchanged 06d to keep it consistent.
+  - P1 rows are unchanged.
+  - P2 pooled is now accuracy 0.321, balanced accuracy 0.314, κ −0.057 (was 0.313 / 0.305 / −0.064).
+  - Fold 4 is now accuracy 0.300, balanced accuracy 0.467, κ 0.112.
+
+#### 2. `EPOCH_CURVE` switch in `06b_run_protocols.sh` (default `seed42`; also `all`, `none`)
+- **With the curve:** every epoch is evaluated on test, as before. By default this covers r50 on P1, r50 on P2 seed 42, and SLOW on P2.
+- **Without it (default: seeds 43 and 44):** the best-by-validation checkpoint is evaluated on val and test, and only the final epoch on test (tag `<run>_ep<NN>_test`, which 06c already reads as the final epoch). Then all checkpoints are deleted, as before.
+- **Safety and budget:** the completeness check before cleanup counts only the evaluations that mode expects. An invalid value aborts with exit 4. The budget now tracks measured time separately for each recipe and mode.
+- **New estimates without the curve** (overridable): r50 7 min (`R50_NOCURVE_EST_MIN`), SLOW 13 min (`SLOW_NOCURVE_EST_MIN`). With the curve they stay at r50 8 and SLOW 18.
+- **Stub tests:**
+  - Seed 42 gets all epochs, then keeps best, final and `last.ckpt`.
+  - Seed 44 gets best plus final only, then all its checkpoints are deleted.
+  - With `EPOCH_CURVE=none`, a failed final-epoch evaluation keeps the checkpoints, and the rerun resumes and finishes.
+
+#### 3. DRY=1 on the regenerated roots
+Exit code 0, 131 lines, 26 blocks. Nothing was written (`outputs/research_gpu` does not exist).
+```
+DRY SUMMARY: to run: probe=1 r50=20 slow=5 (already done, skipped: 0); dropped by budget: none
+DRY SUMMARY: EPOCH_CURVE=seed42: 15 of 25 training runs get every epoch evaluated on test, the others best (val, test) + final epoch (test)
+DRY SUMMARY: projected wall time 250 min (estimates per run incl. evaluation: probe 10; r50 8 with curve, 7 without; slow 18 with curve, 13 without)
+DRY SUMMARY: all needed roots and inputs exist
+```
+The 250 min breaks down as probe 10 + r50 P1 40 + r50 P2 seed 42 40 + seeds 43/44 70 + SLOW 90. With `BUDGET_MIN` set to 200 or 230 the SLOW block is dropped (160 min); at 250 nothing is dropped.
+
+#### Runtime and memory
+06 took 2.3 s at 114 MB peak; 06d took about 2 s; the DRY run under 1 s.
+
+#### Files changed this round
+- `scripts/research/06_make_protocol_roots.py`, `scripts/research/06b_run_protocols.sh`; regenerated `data/p2_f0`, `data/p2_f4` (train/val), `outputs/research/protocols/{roots.csv,val_groups.json,metadata_tree.csv}`.
+
+No dvc, git or ssh.
+
+**Supervisor notes.** Accepted; scripts synced to the host over the direct address and launched with `/workspace/host_launch.sh` (roots rebuilt on the host, DRY check, then the runner under nohup). Known compromise: P2 folds 1–4 share validation group 13, the only three-class group that fits under the 15% cap once the conflict groups are excluded; validation is used for epoch ranking only and the final epoch is reported alongside.
+
+
+## 2026-11-08 — Probe fix for clips missing from the 320p set (same agent, verbatim hand-back)
+
+### Report: 06e_probe.py fix for clips missing from the 320p set
+
+The fix is in and the CPU test passes: a missing file and a corrupt file are logged and skipped, the run finishes with exit 0, and the skip count reaches the summaries. Only `scripts/research/06e_probe.py` changed.
+
+**The host failure may have another cause; check before relaunching.** Here, the previous 06e did not abort on these clips: its decode worker caught the error (`decode_centre` on `videos/high/view2521.mp4` returned ok=False with "FileNotFoundError …"). It printed `extract: FAILED <path>` and carried on, and the fit stage dropped those clips. If the probe exited non-zero on the host, the real reason is probably further down `outputs/research_gpu/_summary/logs/probe.log`; its last lines before the exit are worth reading before rerunning with `RUNS=probe`.
+
+#### What changed
+About 60 changed lines; nothing else touched.
+- **(a) Clip universe:** a new `--groups` option, default `outputs/research/sessions/union_groups.csv`. The clip list is exactly its paths (path, label, split_published), sorted by path; `--limit` takes evenly spaced rows from it. P0 now uses `split_published` from that file instead of the published manifests, so the 4 untranscoded paths never appear. `--data-root` is now only where `videos/` is read. 06b's call is unchanged and still valid.
+- **(b) Skip and log:** the decode worker checks the file exists first ("missing file"); decode errors are caught as before, and the transform step has its own guard. Each skipped clip prints `extract: SKIPPED <path>: <reason>` and stays in the feature file with ok=False. `n_skipped` and the list of skipped clips go into the feature file's meta, and `n_skipped_extraction` into every fit `summary_*.json`.
+- **(c) Fits:** they run on the clips that were extracted.
+- **Feature reuse:** a feature file left by the old 7,705-clip universe holds a different set of paths, so it is re-extracted, not reused.
+
+#### Test output (CPU, `CUDA_VISIBLE_DEVICES=""`, nice, `ulimit -v 6000000`)
+Scratch copy of union_groups.csv: 40 real rows plus `videos/high/view0.mp4` (no file) and `videos/low/view0.mp4` (random bytes). `--limit 42 --workers 2 --threads 3`: both fakes SKIPPED (missing file; InvalidDataError), `features: 40/42 clips ok, 2 skipped, 6s`, all 14 fits ran, `PEAKRSS tree_peak_rss_mb=1682 wall_s=12.6 rc=0`. Feature meta n 42 / n_ok 40 / n_skipped 2; `summary_p0_probe_s0_best_test.json` has `n_skipped_extraction` = 2; neither fake path appears in any prediction file. Two runs against the defaults: `--limit 40` gives 40/40 ok; a second call reuses the feature file.
+
+**Supervisor notes.** The agent was right that the missing clips were not the cause. The host log shows the extraction completed (7,701 of 7,705 ok in 47 s on the GPU) and the fit stage then crashed loading the feature file with `allow_pickle=False` because the old version saved the path array with object dtype. The new version saves unicode paths; I added a try/except around the reuse check so the stale host file cannot crash it again, moved that file aside on the host, and synced the script. The probe block reruns with `RUNS=probe` after the training blocks.
+
+**Supervisor addendum (after the training blocks).** The relaunched probe failed the same way with a freshly extracted feature file: on the host pandas is 3.1.1, where `Series.values.astype(str)` on a string column still yields an object array, so `np.savez` stored object paths and `np.load(allow_pickle=False)` refused them. Locally (pandas 2.3.3) the same line gives a unicode array, which is why the agent's CPU test passed. Fixed by building the path array explicitly, `np.array([str(p) for p in df.path], dtype=str)`; the third run completed (extraction 46 s on the GPU, 14 fits in 83 s). The 25 training runs finished before that with no failures (211 min on the RTX 5090); results are aggregated in `12_leak_gradient_results.md`, the per-group behaviour in `12b_scene_collapse.md` (new script `06f_scene_collapse.py`, written by the supervisor), interpretation in `13_leak_gradient_interpretation.md`.
